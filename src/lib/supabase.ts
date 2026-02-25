@@ -1,17 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Función para obtener las credenciales de forma segura
+const getSupabaseConfig = () => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Si las credenciales faltan, usamos valores de marcador de posición durante el build 
-// para evitar que Next.js falle al prerenderizar las páginas.
-const isMissingVars = !supabaseUrl || !supabaseAnonKey;
+  if (!url || !key) {
+    // Solo mostramos advertencia en el cliente (navegador)
+    if (typeof window !== 'undefined') {
+      console.warn('Supabase credentials are missing. Auth will not work.');
+    }
+    // Devolvemos placeholders solo para evitar errores de tipo/inicialización en build
+    return {
+      url: 'https://tmp-placeholder.supabase.co',
+      key: 'tmp-placeholder'
+    };
+  }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://tmp-placeholder.supabase.co',
-  supabaseAnonKey || 'tmp-placeholder'
-);
+  return { url, key };
+};
 
-if (isMissingVars && typeof window !== 'undefined') {
-  console.warn('Supabase credentials are missing. Check your .env.local file.');
-}
+const config = getSupabaseConfig();
+
+export const supabase = createClient(config.url, config.key);
