@@ -18,9 +18,8 @@ export default function AuthCallback() {
             } else {
                 if (data.session) {
                     await supabase.auth.signOut();
-                    alert("Acceso denegado: Tu correo electrónico no está autorizado.");
                 }
-                router.push("/login");
+                router.push("/login?error=unauthorized");
             }
         };
         handleAuth();
