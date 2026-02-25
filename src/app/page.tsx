@@ -1,3 +1,8 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import {
   PlusCircle,
   Clock,
@@ -8,10 +13,43 @@ import {
   TrendingUp,
   ArrowRight,
   LogOut,
-  Bell
+  Bell,
+  Loader2
 } from "lucide-react";
 
 export default function Home() {
+  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push("/login");
+      } else {
+        setUser(session.user);
+      }
+      setLoading(false);
+    };
+    checkUser();
+  }, [router]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Loader2 className="animate-spin text-primary" size={40} />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
   const kpis = [
     { label: "Anticipos Abiertos", value: "12", icon: <Clock className="text-blue-500" />, sub: "$4,200.00", color: "#3b82f6" },
     { label: "Por Aprobar", value: "5", icon: <FileText className="text-amber-500" />, sub: "3 Urgentes", color: "#f59e0b" },
@@ -57,11 +95,15 @@ export default function Home() {
           <button style={{ color: "var(--muted-foreground)" }}><Bell size={20} /></button>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", borderLeft: "1px solid var(--border)", paddingLeft: "1.5rem" }}>
             <div style={{ textAlign: "right", lineHeight: 1.2 }}>
-              <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>Nabil Zapata</div>
-              <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>Administrador</div>
+              <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{user?.user_metadata?.full_name || user?.email}</div>
+              <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{user?.user_metadata?.role || "Usuario"}</div>
             </div>
-            <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center" }}>
-              <Users size={18} />
+            <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center", overflow: "hidden" }}>
+              {user?.user_metadata?.avatar_url ? (
+                <img src={user.user_metadata.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <Users size={18} />
+              )}
             </div>
           </div>
         </div>
@@ -162,7 +204,11 @@ export default function Home() {
                 <button className="secondary-button" style={{ justifyContent: "flex-start", width: "100%" }}>
                   <PlusCircle size={18} /> Nueva Solicitud
                 </button>
-                <button className="secondary-button" style={{ justifyContent: "flex-start", width: "100%" }}>
+                <button
+                  onClick={handleLogout}
+                  className="secondary-button"
+                  style={{ justifyContent: "flex-start", width: "100%" }}
+                >
                   <LogOut size={18} color="#ef4444" /> Cerrar Sesión
                 </button>
               </div>
