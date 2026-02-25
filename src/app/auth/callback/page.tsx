@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { ALLOWED_EMAILS } from "@/lib/constants";
 
 export default function AuthCallback() {
     const router = useRouter();
@@ -10,9 +11,15 @@ export default function AuthCallback() {
     useEffect(() => {
         const handleAuth = async () => {
             const { data, error } = await supabase.auth.getSession();
-            if (data.session) {
+            const userEmail = data.session?.user?.email;
+
+            if (data.session && userEmail && ALLOWED_EMAILS.includes(userEmail)) {
                 router.push("/");
             } else {
+                if (data.session) {
+                    await supabase.auth.signOut();
+                    alert("Acceso denegado: Tu correo electrónico no está autorizado.");
+                }
                 router.push("/login");
             }
         };

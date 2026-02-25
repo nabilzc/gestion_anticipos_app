@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { ALLOWED_EMAILS } from "@/lib/constants";
 import {
   PlusCircle,
   Clock,
@@ -26,8 +27,13 @@ export default function Home() {
     // Escuchar cambios en el estado de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
-        setUser(session.user);
-        setLoading(false);
+        if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
+          setUser(session.user);
+          setLoading(false);
+        } else {
+          supabase.auth.signOut();
+          router.push("/login?error=unauthorized");
+        }
       } else if (event === 'SIGNED_OUT') {
         router.push("/login");
       }
@@ -36,8 +42,13 @@ export default function Home() {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        setUser(session.user);
-        setLoading(false);
+        if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
+          setUser(session.user);
+          setLoading(false);
+        } else {
+          await supabase.auth.signOut();
+          router.push("/login?error=unauthorized");
+        }
       } else {
         // Un pequeño retraso para permitir que Supabase procese el hash de la URL
         setTimeout(async () => {
@@ -45,7 +56,12 @@ export default function Home() {
           if (!delayedSession) {
             router.push("/login");
           } else {
-            setUser(delayedSession.user);
+            if (delayedSession.user.email && ALLOWED_EMAILS.includes(delayedSession.user.email)) {
+              setUser(delayedSession.user);
+            } else {
+              await supabase.auth.signOut();
+              router.push("/login?error=unauthorized");
+            }
           }
           setLoading(false);
         }, 500);

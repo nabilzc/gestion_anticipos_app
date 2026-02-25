@@ -1,10 +1,13 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { useState } from "react";
-import { LogIn } from "lucide-react";
+import { useState, Suspense } from "react";
+import { LogIn, AlertCircle } from "lucide-react";
 
-export default function LoginPage() {
+function LoginContent() {
+    const searchParams = useSearchParams();
+    const error = searchParams.get("error");
     const [loading, setLoading] = useState(false);
 
     const handleLogin = async () => {
@@ -62,6 +65,25 @@ export default function LoginPage() {
                     Ingresa al Sistema de Gestión de Anticipos
                 </p>
 
+                {error === "unauthorized" && (
+                    <div style={{
+                        background: "#fef2f2",
+                        border: "1px solid #fee2e2",
+                        borderRadius: "12px",
+                        padding: "1rem",
+                        marginBottom: "1.5rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        color: "#dc2626",
+                        fontSize: "0.875rem",
+                        textAlign: "left"
+                    }}>
+                        <AlertCircle size={20} style={{ flexShrink: 0 }} />
+                        <span>Acceso denegado: Tu correo electrónico no está en la lista de usuarios autorizados.</span>
+                    </div>
+                )}
+
                 <button
                     onClick={handleLogin}
                     disabled={loading}
@@ -117,5 +139,13 @@ export default function LoginPage() {
                 </p>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={null}>
+            <LoginContent />
+        </Suspense>
     );
 }
