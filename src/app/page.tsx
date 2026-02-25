@@ -23,16 +23,40 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Escuchar cambios en el estado de autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        setUser(session.user);
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        router.push("/login");
+      }
+    });
+
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push("/login");
-      } else {
+      if (session) {
         setUser(session.user);
+        setLoading(false);
+      } else {
+        // Un pequeño retraso para permitir que Supabase procese el hash de la URL
+        setTimeout(async () => {
+          const { data: { session: delayedSession } } = await supabase.auth.getSession();
+          if (!delayedSession) {
+            router.push("/login");
+          } else {
+            setUser(delayedSession.user);
+          }
+          setLoading(false);
+        }, 500);
       }
-      setLoading(false);
     };
+
     checkUser();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [router]);
 
   const handleLogout = async () => {
