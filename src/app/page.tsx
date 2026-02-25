@@ -133,7 +133,10 @@ export default function Home() {
 
         <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
           <button style={{ color: "var(--muted-foreground)" }}><Bell size={20} /></button>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", borderLeft: "1px solid var(--border)", paddingLeft: "1.5rem" }}>
+          <div
+            onClick={() => router.push("/perfil")}
+            style={{ display: "flex", alignItems: "center", gap: "0.75rem", borderLeft: "1px solid var(--border)", paddingLeft: "1.5rem", cursor: "pointer" }}
+          >
             <div style={{ textAlign: "right", lineHeight: 1.2 }}>
               <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{user?.user_metadata?.full_name || user?.email}</div>
               <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{user?.user_metadata?.role || "Usuario"}</div>
@@ -243,6 +246,13 @@ export default function Home() {
                 </button>
                 <button className="secondary-button" style={{ justifyContent: "flex-start", width: "100%" }}>
                   <PlusCircle size={18} /> Nueva Solicitud
+                </button>
+                <button
+                  onClick={() => router.push("/perfil")}
+                  className="secondary-button"
+                  style={{ justifyContent: "flex-start", width: "100%" }}
+                >
+                  <Users size={18} /> Mi Perfil
                 </button>
                 <button
                   onClick={handleLogout}
