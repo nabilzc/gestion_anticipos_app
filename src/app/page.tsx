@@ -1,100 +1,31 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-import { ALLOWED_EMAILS } from "@/lib/constants";
 import {
   PlusCircle,
   Clock,
   CheckCircle2,
   AlertCircle,
   FileText,
-  Users,
   TrendingUp,
   ArrowRight,
   LogOut,
   Bell,
-  Loader2
+  Receipt
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Home() {
-  const router = useRouter();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Escuchar cambios en el estado de autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
-          setUser(session.user);
-          setLoading(false);
-        } else {
-          supabase.auth.signOut();
-          router.push("/login?error=unauthorized");
-        }
-      } else if (event === 'SIGNED_OUT') {
-        router.push("/login");
-      }
-    });
-
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
-          setUser(session.user);
-          setLoading(false);
-        } else {
-          await supabase.auth.signOut();
-          router.push("/login?error=unauthorized");
-        }
-      } else {
-        // Un pequeño retraso para permitir que Supabase procese el hash de la URL
-        setTimeout(async () => {
-          const { data: { session: delayedSession } } = await supabase.auth.getSession();
-          if (!delayedSession) {
-            router.push("/login");
-          } else {
-            if (delayedSession.user.email && ALLOWED_EMAILS.includes(delayedSession.user.email)) {
-              setUser(delayedSession.user);
-            } else {
-              await supabase.auth.signOut();
-              router.push("/login?error=unauthorized");
-            }
-          }
-          setLoading(false);
-        }, 500);
-      }
-    };
-
-    checkUser();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [router]);
+  const { user, signOut } = useAuth();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
+    await signOut();
   };
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <Loader2 className="animate-spin text-primary" size={40} />
-      </div>
-    );
-  }
-
-  if (!user) return null;
-
   const kpis = [
-    { label: "Anticipos Abiertos", value: "12", icon: <Clock className="text-blue-500" />, sub: "$4,200.00", color: "#3b82f6" },
-    { label: "Por Aprobar", value: "5", icon: <FileText className="text-amber-500" />, sub: "3 Urgentes", color: "#f59e0b" },
-    { label: "Cerrados", value: "148", icon: <CheckCircle2 className="text-emerald-500" />, sub: "Este mes", color: "#10b981" },
-    { label: "Vencidos", value: "2", icon: <AlertCircle className="text-rose-500" />, sub: "$850.00", color: "#f43f5e" },
+    { label: "Anticipos Abiertos", value: "12", icon: <Clock />, sub: "$4,200.00", color: "#3b82f6" },
+    { label: "Por Aprobar", value: "5", icon: <FileText />, sub: "3 Urgentes", color: "#f59e0b" },
+    { label: "Cerrados", value: "148", icon: <CheckCircle2 />, sub: "Este mes", color: "#10b981" },
+    { label: "Vencidos", value: "2", icon: <AlertCircle />, sub: "$850.00", color: "#f43f5e" },
   ];
 
   const recentActivity = [
@@ -104,50 +35,25 @@ export default function Home() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-      {/* Navbar */}
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f8fafc" }}>
+      {/* Top Header Mockup */}
       <nav style={{
         background: "white",
-        borderBottom: "1px solid var(--border)",
-        padding: "0.75rem 2rem",
+        borderBottom: "1px solid #f1f5f9",
+        padding: "1rem 2rem",
         display: "flex",
-        justifyContent: "space-between",
+        justifyContent: "flex-end",
         alignItems: "center",
         position: "sticky",
         top: 0,
-        zIndex: 50
+        zIndex: 50,
+        height: "72px"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <div style={{
-            width: "32px",
-            height: "32px",
-            background: "var(--primary)",
-            borderRadius: "6px",
-            display: "grid",
-            placeItems: "center",
-            color: "white",
-            fontWeight: "bold"
-          }}>F</div>
-          <span style={{ fontWeight: 600, fontSize: "1.1rem", letterSpacing: "-0.02em" }}>FUNDAEC ERP</span>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
-          <button style={{ color: "var(--muted-foreground)" }}><Bell size={20} /></button>
-          <div
-            onClick={() => router.push("/perfil")}
-            style={{ display: "flex", alignItems: "center", gap: "0.75rem", borderLeft: "1px solid var(--border)", paddingLeft: "1.5rem", cursor: "pointer" }}
-          >
-            <div style={{ textAlign: "right", lineHeight: 1.2 }}>
-              <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{user?.user_metadata?.full_name || user?.email}</div>
-              <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{user?.user_metadata?.role || "Usuario"}</div>
-            </div>
-            <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center", overflow: "hidden" }}>
-              {user?.user_metadata?.avatar_url ? (
-                <img src={user.user_metadata.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                <Users size={18} />
-              )}
-            </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
+          <button style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}><Bell size={20} /></button>
+          <div style={{ textAlign: "right", lineHeight: 1.2, marginLeft: "1rem" }}>
+            <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "#1e293b" }}>Periodo Actual</div>
+            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Octubre 2024</div>
           </div>
         </div>
       </nav>
@@ -156,12 +62,24 @@ export default function Home() {
         {/* Header Section */}
         <header style={{ marginBottom: "2.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
-            <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-0.04em", marginBottom: "0.5rem" }}>Panel de Control</h1>
-            <p style={{ color: "var(--muted-foreground)" }}>Bienvenido al Sistema de Gestión de Anticipos</p>
+            <h1 style={{ fontSize: "2rem", fontWeight: 700, color: "#1e293b", letterSpacing: "-0.04em", marginBottom: "0.5rem" }}>Panel de Control</h1>
+            <p style={{ color: "#64748b" }}>Bienvenido al Sistema de Gestión de Anticipos FUNDAEC</p>
           </div>
-          <button className="primary-button">
+          <button className="primary-button" style={{
+            background: "#132d1e",
+            color: "white",
+            padding: "10px 20px",
+            borderRadius: "12px",
+            border: "none",
+            fontWeight: 600,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            cursor: "pointer",
+            boxShadow: "0 4px 12px rgba(19, 45, 30, 0.2)"
+          }}>
             <PlusCircle size={18} />
-            Nueva Solicitud de Anticipo
+            Nueva Solicitud
           </button>
         </header>
 
@@ -173,15 +91,24 @@ export default function Home() {
           marginBottom: "3rem"
         }}>
           {kpis.map((kpi, i) => (
-            <div key={i} className="card" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <div key={i} className="card" style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.5rem",
+              padding: "24px",
+              borderRadius: "20px",
+              border: "1px solid rgba(0,0,0,0.05)",
+              background: "white",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.02)"
+            }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--muted-foreground)" }}>{kpi.label}</span>
-                <span style={{ padding: "0.5rem", background: `${kpi.color}15`, borderRadius: "8px", color: kpi.color }}>
+                <span style={{ fontSize: "0.875rem", fontWeight: 600, color: "#64748b" }}>{kpi.label}</span>
+                <span style={{ padding: "10px", background: `${kpi.color}10`, borderRadius: "10px", color: kpi.color, display: "flex" }}>
                   {kpi.icon}
                 </span>
               </div>
-              <div style={{ fontSize: "1.75rem", fontWeight: 700 }}>{kpi.value}</div>
-              <div style={{ fontSize: "0.875rem", color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+              <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "#1e293b", marginTop: "4px" }}>{kpi.value}</div>
+              <div style={{ fontSize: "0.875rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "4px" }}>
                 <TrendingUp size={14} style={{ color: "#10b981" }} />
                 <span>{kpi.sub} total</span>
               </div>
@@ -192,17 +119,17 @@ export default function Home() {
         {/* Action Blocks & Activity */}
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "2rem" }}>
           {/* Recent Activity Table */}
-          <section className="card" style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "1.5rem", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h2 style={{ fontSize: "1.1rem", fontWeight: 600 }}>Actividad Reciente</h2>
-              <button style={{ color: "var(--primary)", fontSize: "0.875rem", fontWeight: 500, display: "flex", alignItems: "center", gap: "0.25rem" }}>
+          <section className="card" style={{ padding: 0, overflow: "hidden", borderRadius: "20px", border: "1px solid rgba(0,0,0,0.05)", background: "white" }}>
+            <div style={{ padding: "1.5rem", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 600, color: "#1e293b" }}>Actividad Reciente</h2>
+              <button style={{ color: "#132d1e", background: "none", border: "none", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}>
                 Ver Todo <ArrowRight size={14} />
               </button>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                 <thead>
-                  <tr style={{ background: "#f8fafc", fontSize: "0.75rem", textTransform: "uppercase", color: "var(--muted-foreground)", letterSpacing: "0.05em" }}>
+                  <tr style={{ background: "#f8fafc", fontSize: "0.75rem", textTransform: "uppercase", color: "#94a3b8", letterSpacing: "0.05em" }}>
                     <th style={{ padding: "1rem 1.5rem" }}>ID / Solicitante</th>
                     <th style={{ padding: "1rem 1.5rem" }}>Concepto</th>
                     <th style={{ padding: "1rem 1.5rem" }}>Monto</th>
@@ -211,15 +138,23 @@ export default function Home() {
                 </thead>
                 <tbody style={{ fontSize: "0.875rem" }}>
                   {recentActivity.map((item, i) => (
-                    <tr key={i} style={{ borderBottom: i === recentActivity.length - 1 ? "none" : "1px solid var(--border)" }}>
+                    <tr key={i} style={{ borderBottom: i === recentActivity.length - 1 ? "none" : "1px solid #f1f5f9" }}>
                       <td style={{ padding: "1rem 1.5rem" }}>
-                        <div style={{ fontWeight: 600 }}>{item.id}</div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>{item.user}</div>
+                        <div style={{ fontWeight: 600, color: "#334155" }}>{item.id}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{item.user}</div>
                       </td>
-                      <td style={{ padding: "1rem 1.5rem", color: "var(--muted-foreground)" }}>{item.concept}</td>
-                      <td style={{ padding: "1rem 1.5rem", fontWeight: 600 }}>{item.amount}</td>
+                      <td style={{ padding: "1rem 1.5rem", color: "#64748b" }}>{item.concept}</td>
+                      <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>{item.amount}</td>
                       <td style={{ padding: "1rem 1.5rem" }}>
-                        <span className={`status-badge ${item.statusClass}`}>{item.status}</span>
+                        <span className={`status-badge ${item.statusClass}`} style={{
+                          padding: "4px 10px",
+                          borderRadius: "12px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          background: item.status === "Aprobado" ? "#f0fdf4" : item.status === "Pendiente" ? "#fffbeb" : "#eff6ff",
+                          color: item.status === "Aprobado" ? "#16a34a" : item.status === "Pendiente" ? "#d97706" : "#2563eb",
+                          display: "inline-block"
+                        }}>{item.status}</span>
                       </td>
                     </tr>
                   ))}
@@ -230,36 +165,75 @@ export default function Home() {
 
           {/* Quick Actions Sidebar */}
           <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <div className="card" style={{ background: "var(--primary)", color: "white", border: "none" }}>
+            <div className="card" style={{
+              background: "linear-gradient(135deg, #132d1e 0%, #1e4d3a 100%)",
+              color: "white",
+              border: "none",
+              padding: "24px",
+              borderRadius: "20px",
+              boxShadow: "0 8px 24px rgba(19, 45, 30, 0.15)"
+            }}>
               <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Legalización Pendiente</h3>
-              <p style={{ fontSize: "0.875rem", opacity: 0.9, marginBottom: "1.5rem" }}>Tienes 3 anticipos entregados que requieren subir facturas de soporte.</p>
-              <button className="secondary-button" style={{ width: "100%", justifyContent: "center", background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.2)" }}>
+              <p style={{ fontSize: "0.875rem", opacity: 0.9, marginBottom: "1.5rem", lineHeight: 1.5 }}>Tienes 3 anticipos entregados que requieren subir facturas de soporte.</p>
+              <button style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: "12px",
+                background: "rgba(255,255,255,0.15)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.2)",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "background 0.2s"
+              }}>
                 Ir a Legalizaciones
               </button>
             </div>
 
-            <div className="card">
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "1.25rem" }}>Accesos Rápidos</h3>
+            <div className="card" style={{ padding: "24px", borderRadius: "20px", background: "white", border: "1px solid rgba(0,0,0,0.05)" }}>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 600, color: "#1e293b", marginBottom: "1.25rem" }}>Accesos Rápidos</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <button className="secondary-button" style={{ justifyContent: "flex-start", width: "100%" }}>
-                  <FileText size={18} /> Exportar Reporte Mensual
-                </button>
-                <button className="secondary-button" style={{ justifyContent: "flex-start", width: "100%" }}>
-                  <PlusCircle size={18} /> Nueva Solicitud
-                </button>
-                <button
-                  onClick={() => router.push("/perfil")}
-                  className="secondary-button"
-                  style={{ justifyContent: "flex-start", width: "100%" }}
-                >
-                  <Users size={18} /> Mi Perfil
-                </button>
+                {[
+                  { icon: FileText, text: "Reporte Mensual", href: "#" },
+                  { icon: PlusCircle, text: "Nueva Solicitud", href: "#" },
+                  { icon: Receipt, text: "Mis Gastos", href: "#" }
+                ].map((action, k) => (
+                  <button key={k} style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    width: "100%",
+                    padding: "12px",
+                    borderRadius: "12px",
+                    background: "#f8fafc",
+                    border: "none",
+                    color: "#475569",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontSize: "14px"
+                  }}>
+                    <action.icon size={18} /> {action.text}
+                  </button>
+                ))}
                 <button
                   onClick={handleLogout}
-                  className="secondary-button"
-                  style={{ justifyContent: "flex-start", width: "100%" }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                    width: "100%",
+                    padding: "12px",
+                    borderRadius: "12px",
+                    background: "#fef2f2",
+                    border: "none",
+                    color: "#ef4444",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    marginTop: "8px"
+                  }}
                 >
-                  <LogOut size={18} color="#ef4444" /> Cerrar Sesión
+                  <LogOut size={18} /> Cerrar Sesión
                 </button>
               </div>
             </div>
@@ -270,10 +244,10 @@ export default function Home() {
       <footer style={{
         padding: "2rem",
         textAlign: "center",
-        color: "var(--muted-foreground)",
+        color: "#94a3b8",
         fontSize: "0.875rem",
-        borderTop: "1px solid var(--border)",
-        background: "white"
+        background: "white",
+        borderTop: "1px solid #f1f5f9"
       }}>
         © 2024 FUNDAEC - Sistema de Gestión de Anticipos. Todos los derechos reservados.
       </footer>
