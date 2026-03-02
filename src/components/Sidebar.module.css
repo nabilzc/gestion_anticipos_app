@@ -74,9 +74,9 @@
 }
 
 .navItemActive {
-  background: #f7fee7; /* Light lime background */
-  color: #132d1e; /* Dark green text */
-  font-weight: 600;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
 }
 
 .icon {
@@ -87,7 +87,7 @@
 }
 
 .navItemActive .icon {
-  color: #b5e24d; /* Bright lime icon */
+  color: #2563eb;
 }
 
 .footer {
@@ -106,7 +106,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #132d1e;
+  color: #2563eb;
   font-weight: 700;
 }
 
@@ -149,30 +149,33 @@
     width: 80px;
     min-width: 80px;
   }
-  
-  .subtitle, .sectionLabel, .navItem span, .userInfo {
+
+  .subtitle,
+  .sectionLabel,
+  .navItem span,
+  .userInfo {
     display: none;
   }
-  
+
   .header {
     align-items: center;
     padding: 20px 10px;
   }
-  
+
   .logo {
     max-width: 40px;
   }
-  
+
   .navItem {
     justify-content: center;
     padding: 12px;
   }
-  
+
   .footer {
     justify-content: center;
     padding: 16px 10px;
   }
-  
+
   .logoutBtn {
     display: none;
   }

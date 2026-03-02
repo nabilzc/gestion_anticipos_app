@@ -66,20 +66,20 @@ export default function Home() {
             <p style={{ color: "#64748b" }}>Bienvenido al Sistema de Gestión de Anticipos FUNDAEC</p>
           </div>
           <button className="primary-button" style={{
-            background: "#132d1e",
+            background: "#2563eb",
             color: "white",
-            padding: "10px 20px",
-            borderRadius: "12px",
+            padding: "10px 24px",
+            borderRadius: "10px",
             border: "none",
-            fontWeight: 600,
+            fontWeight: 700,
             display: "flex",
             alignItems: "center",
             gap: "8px",
             cursor: "pointer",
-            boxShadow: "0 4px 12px rgba(19, 45, 30, 0.2)"
+            boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)"
           }}>
             <PlusCircle size={18} />
-            Nueva Solicitud
+            Nueva solicitud
           </button>
         </header>
 
@@ -122,7 +122,7 @@ export default function Home() {
           <section className="card" style={{ padding: 0, overflow: "hidden", borderRadius: "20px", border: "1px solid rgba(0,0,0,0.05)", background: "white" }}>
             <div style={{ padding: "1.5rem", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h2 style={{ fontSize: "1.1rem", fontWeight: 600, color: "#1e293b" }}>Actividad Reciente</h2>
-              <button style={{ color: "#132d1e", background: "none", border: "none", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}>
+              <button style={{ color: "#2563eb", background: "none", border: "none", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}>
                 Ver Todo <ArrowRight size={14} />
               </button>
             </div>
@@ -140,8 +140,8 @@ export default function Home() {
                   {recentActivity.map((item, i) => (
                     <tr key={i} style={{ borderBottom: i === recentActivity.length - 1 ? "none" : "1px solid #f1f5f9" }}>
                       <td style={{ padding: "1rem 1.5rem" }}>
-                        <div style={{ fontWeight: 600, color: "#334155" }}>{item.id}</div>
-                        <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{item.user}</div>
+                        <div style={{ fontWeight: 700, color: "#2563eb", fontSize: "1rem" }}>{item.id}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{item.user}</div>
                       </td>
                       <td style={{ padding: "1rem 1.5rem", color: "#64748b" }}>{item.concept}</td>
                       <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>{item.amount}</td>
@@ -166,25 +166,26 @@ export default function Home() {
           {/* Quick Actions Sidebar */}
           <section style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
             <div className="card" style={{
-              background: "linear-gradient(135deg, #132d1e 0%, #1e4d3a 100%)",
-              color: "white",
-              border: "none",
+              background: "#eff6ff",
+              color: "#1e40af",
+              border: "1px solid #dbeafe",
               padding: "24px",
-              borderRadius: "20px",
-              boxShadow: "0 8px 24px rgba(19, 45, 30, 0.15)"
+              borderRadius: "24px",
+              boxShadow: "0 10px 15px -3px rgba(37, 99, 235, 0.1)"
             }}>
-              <h3 style={{ fontSize: "1.1rem", fontWeight: 600, marginBottom: "0.75rem" }}>Legalización Pendiente</h3>
-              <p style={{ fontSize: "0.875rem", opacity: 0.9, marginBottom: "1.5rem", lineHeight: 1.5 }}>Tienes 3 anticipos entregados que requieren subir facturas de soporte.</p>
+              <h3 style={{ fontSize: "1.1rem", fontWeight: 800, marginBottom: "0.75rem", color: "#2563eb" }}>Legalización Pendiente</h3>
+              <p style={{ fontSize: "0.875rem", color: "#1e40af", marginBottom: "1.5rem", lineHeight: 1.5, fontWeight: 500 }}>Tienes 3 anticipos entregados que requieren subir facturas de soporte.</p>
               <button style={{
                 width: "100%",
                 padding: "12px",
                 borderRadius: "12px",
-                background: "rgba(255,255,255,0.15)",
+                background: "#2563eb",
                 color: "white",
-                border: "1px solid rgba(255,255,255,0.2)",
-                fontWeight: 600,
+                border: "none",
+                fontWeight: 700,
                 cursor: "pointer",
-                transition: "background 0.2s"
+                boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)",
+                transition: "all 0.2s"
               }}>
                 Ir a Legalizaciones
               </button>
