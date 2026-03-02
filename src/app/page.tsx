@@ -1,5 +1,7 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   PlusCircle,
   Clock,
@@ -10,29 +12,98 @@ import {
   ArrowRight,
   LogOut,
   Bell,
-  Receipt
+  Receipt,
+  Loader2
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 export default function Home() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
+  const [stats, setStats] = useState({
+    totalAnticipos: 0,
+    montoCirculacion: 0,
+    pendientes: 0,
+    vencidos: 0,
+  });
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      if (!user) return;
+
+      try {
+        // 1. Fetch KPIs
+        const { data: anticipos, error } = await supabase
+          .from("anticipos")
+          .select("id, monto_total, estado, created_at");
+
+        if (error) throw error;
+
+        if (anticipos) {
+          const total = anticipos.length;
+          const monto = anticipos
+            .filter(a => a.estado !== "Cerrado" && a.estado !== "Rechazado")
+            .reduce((sum, a) => sum + (a.monto_total || 0), 0);
+
+          const pendientes = anticipos.filter(a => a.estado === "Pendiente").length;
+          // De momento, vencidos mockeado o basado en fecha si tuviéramos campo fecha_vencimiento
+          const vencidos = 0;
+
+          setStats({
+            totalAnticipos: total,
+            montoCirculacion: monto,
+            pendientes: pendientes,
+            vencidos: vencidos,
+          });
+        }
+
+        // 2. Fetch Recent Activity
+        const { data: activity, error: activityError } = await supabase
+          .from("anticipos")
+          .select(`
+            id, 
+            motivo, 
+            monto_total, 
+            estado,
+            profiles (full_name)
+          `)
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        if (activityError) throw activityError;
+        setRecentActivity(activity || []);
+
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut();
   };
 
   const kpis = [
-    { label: "Anticipos Abiertos", value: "12", icon: <Clock />, sub: "$4,200.00", color: "#3b82f6" },
-    { label: "Por Aprobar", value: "5", icon: <FileText />, sub: "3 Urgentes", color: "#f59e0b" },
-    { label: "Cerrados", value: "148", icon: <CheckCircle2 />, sub: "Este mes", color: "#10b981" },
-    { label: "Vencidos", value: "2", icon: <AlertCircle />, sub: "$850.00", color: "#f43f5e" },
+    { label: "Total Anticipos", value: stats.totalAnticipos.toString(), icon: <FileText />, sub: "Histórico", color: "#2563eb" },
+    { label: "Monto en Circulación", value: `$${stats.montoCirculacion.toLocaleString()}`, icon: <TrendingUp />, sub: "Activo", color: "#10b981" },
+    { label: "Por Aprobar", value: stats.pendientes.toString(), icon: <Clock />, sub: "Pendientes", color: "#f59e0b" },
+    { label: "Vencidos", value: stats.vencidos.toString(), icon: <AlertCircle />, sub: "Urgente", color: "#f43f5e" },
   ];
 
-  const recentActivity = [
-    { id: "ANT-2024-001", user: "Ana García", concept: "Viáticos Taller Valle", amount: "$350.00", status: "Pendiente", statusClass: "status-pending" },
-    { id: "ANT-2024-002", user: "Luis Torres", concept: "Suministros Proyecto X", amount: "$1,200.00", status: "Aprobado", statusClass: "status-approved" },
-    { id: "ANT-2024-003", user: "Maria Jose", concept: "Transporte Regional", amount: "$85.00", status: "Abierto", statusClass: "status-open" },
-  ];
+  if (loading) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
+        <Loader2 className="animate-spin text-primary" size={40} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#f8fafc" }}>
@@ -53,7 +124,7 @@ export default function Home() {
           <button style={{ color: "#94a3b8", background: "none", border: "none", cursor: "pointer" }}><Bell size={20} /></button>
           <div style={{ textAlign: "right", lineHeight: 1.2, marginLeft: "1rem" }}>
             <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "#1e293b" }}>Periodo Actual</div>
-            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>Octubre 2024</div>
+            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}</div>
           </div>
         </div>
       </nav>
@@ -65,19 +136,23 @@ export default function Home() {
             <h1 style={{ fontSize: "2rem", fontWeight: 700, color: "#1e293b", letterSpacing: "-0.04em", marginBottom: "0.5rem" }}>Panel de Control</h1>
             <p style={{ color: "#64748b" }}>Bienvenido al Sistema de Gestión de Anticipos FUNDAEC</p>
           </div>
-          <button className="primary-button" style={{
-            background: "#2563eb",
-            color: "white",
-            padding: "10px 24px",
-            borderRadius: "10px",
-            border: "none",
-            fontWeight: 700,
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            cursor: "pointer",
-            boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)"
-          }}>
+          <button
+            onClick={() => router.push("/solicitudes/nueva")}
+            className="primary-button"
+            style={{
+              background: "#2563eb",
+              color: "white",
+              padding: "10px 24px",
+              borderRadius: "10px",
+              border: "none",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              cursor: "pointer",
+              boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)"
+            }}
+          >
             <PlusCircle size={18} />
             Nueva solicitud
           </button>
@@ -110,7 +185,7 @@ export default function Home() {
               <div style={{ fontSize: "1.75rem", fontWeight: 700, color: "#1e293b", marginTop: "4px" }}>{kpi.value}</div>
               <div style={{ fontSize: "0.875rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "4px" }}>
                 <TrendingUp size={14} style={{ color: "#10b981" }} />
-                <span>{kpi.sub} total</span>
+                <span>{kpi.sub}</span>
               </div>
             </div>
           ))}
@@ -137,27 +212,31 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody style={{ fontSize: "0.875rem" }}>
-                  {recentActivity.map((item, i) => (
+                  {recentActivity.length > 0 ? recentActivity.map((item, i) => (
                     <tr key={i} style={{ borderBottom: i === recentActivity.length - 1 ? "none" : "1px solid #f1f5f9" }}>
                       <td style={{ padding: "1rem 1.5rem" }}>
-                        <div style={{ fontWeight: 700, color: "#2563eb", fontSize: "1rem" }}>{item.id}</div>
-                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{item.user}</div>
+                        <div style={{ fontWeight: 700, color: "#2563eb", fontSize: "1rem" }}>{`ANT-${item.id.toString().padStart(3, '0')}`}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{item.profiles?.full_name || "Usuario"}</div>
                       </td>
-                      <td style={{ padding: "1rem 1.5rem", color: "#64748b" }}>{item.concept}</td>
-                      <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>{item.amount}</td>
+                      <td style={{ padding: "1rem 1.5rem", color: "#64748b" }}>{item.motivo}</td>
+                      <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>${(item.monto_total || 0).toLocaleString()}</td>
                       <td style={{ padding: "1rem 1.5rem" }}>
-                        <span className={`status-badge ${item.statusClass}`} style={{
+                        <span style={{
                           padding: "4px 10px",
                           borderRadius: "12px",
                           fontSize: "11px",
                           fontWeight: 600,
-                          background: item.status === "Aprobado" ? "#f0fdf4" : item.status === "Pendiente" ? "#fffbeb" : "#eff6ff",
-                          color: item.status === "Aprobado" ? "#16a34a" : item.status === "Pendiente" ? "#d97706" : "#2563eb",
+                          background: item.estado === "Aprobado" ? "#f0fdf4" : item.estado === "Pendiente" ? "#fffbeb" : "#eff6ff",
+                          color: item.estado === "Aprobado" ? "#16a34a" : item.estado === "Pendiente" ? "#d97706" : "#2563eb",
                           display: "inline-block"
-                        }}>{item.status}</span>
+                        }}>{item.estado}</span>
                       </td>
                     </tr>
-                  ))}
+                  )) : (
+                    <tr>
+                      <td colSpan={4} style={{ padding: "2rem", textAlign: "center", color: "#94a3b8" }}>No hay actividad reciente.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -196,23 +275,27 @@ export default function Home() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {[
                   { icon: FileText, text: "Reporte Mensual", href: "#" },
-                  { icon: PlusCircle, text: "Nueva Solicitud", href: "#" },
+                  { icon: PlusCircle, text: "Nueva Solicitud", href: "/solicitudes/nueva" },
                   { icon: Receipt, text: "Mis Gastos", href: "#" }
                 ].map((action, k) => (
-                  <button key={k} style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: "12px",
-                    background: "#f8fafc",
-                    border: "none",
-                    color: "#475569",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    fontSize: "14px"
-                  }}>
+                  <button
+                    key={k}
+                    onClick={() => action.href !== "#" && router.push(action.href)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      width: "100%",
+                      padding: "12px",
+                      borderRadius: "12px",
+                      background: "#f8fafc",
+                      border: "none",
+                      color: "#475569",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                      fontSize: "14px"
+                    }}
+                  >
                     <action.icon size={18} /> {action.text}
                   </button>
                 ))}
@@ -250,7 +333,7 @@ export default function Home() {
         background: "white",
         borderTop: "1px solid #f1f5f9"
       }}>
-        © 2024 FUNDAEC - Sistema de Gestión de Anticipos. Todos los derechos reservados.
+        © {new Date().getFullYear()} FUNDAEC - Sistema de Gestión de Anticipos. Todos los derechos reservados.
       </footer>
     </div>
   );

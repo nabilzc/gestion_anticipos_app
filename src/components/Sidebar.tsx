@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  PlusCircle, 
-  FileText, 
-  Receipt, 
+import {
+  LayoutDashboard,
+  PlusCircle,
+  FileText,
+  Receipt,
   HelpCircle,
   LogOut,
   User as UserIcon
@@ -30,7 +30,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
 
   const menuItems = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Nueva Solicitud', href: '/solicitud', icon: PlusCircle },
+    { name: 'Nueva Solicitud', href: '/solicitudes/nueva', icon: PlusCircle },
     { name: 'Mis Anticipos', href: '/mis-anticipos', icon: FileText },
     { name: 'Legalizaciones', href: '/legalizaciones', icon: Receipt },
   ];
@@ -45,9 +45,9 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     <aside className={styles.sidebar}>
       <div className={styles.header}>
         <div className={styles.logoContainer}>
-          <img 
-            src="/logo-fundaec.png" 
-            alt="FUNDAEC Logo" 
+          <img
+            src="/logo-fundaec.png"
+            alt="FUNDAEC Logo"
             className={styles.logo}
           />
         </div>
@@ -59,8 +59,8 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
         {menuItems.map((item) => {
           const Active = isActive(item.href);
           return (
-            <Link 
-              key={item.href} 
+            <Link
+              key={item.href}
               href={item.href}
               className={`${styles.navItem} ${Active ? styles.navItemActive : ''}`}
             >
@@ -71,8 +71,8 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
         })}
 
         <div className={styles.sectionLabel} style={{ marginTop: 'auto' }}>SOPORTE</div>
-        <Link 
-          href="/ayuda" 
+        <Link
+          href="/ayuda"
           className={`${styles.navItem} ${pathname === '/ayuda' ? styles.navItemActive : ''}`}
         >
           <HelpCircle className={styles.icon} size={20} />
@@ -83,10 +83,10 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       <div className={styles.footer}>
         <div className={styles.userAvatar}>
           {user?.user_metadata?.avatar_url ? (
-            <img 
-              src={user.user_metadata.avatar_url} 
-              alt="Avatar" 
-              style={{ width: '100%', height: '100%', borderRadius: '12px' }} 
+            <img
+              src={user.user_metadata.avatar_url}
+              alt="Avatar"
+              style={{ width: '100%', height: '100%', borderRadius: '12px' }}
             />
           ) : (
             user?.user_metadata?.full_name ? user.user_metadata.full_name.charAt(0) : <UserIcon size={18} />
@@ -96,8 +96,8 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
           <span className={styles.userName}>{user?.user_metadata?.full_name || user?.email || 'Usuario'}</span>
           <span className={styles.userRole}>{user?.user_metadata?.role || 'Empleado'}</span>
         </div>
-        <button 
-          className={styles.logoutBtn} 
+        <button
+          className={styles.logoutBtn}
           onClick={onLogout}
           title="Cerrar Sesión"
         >
