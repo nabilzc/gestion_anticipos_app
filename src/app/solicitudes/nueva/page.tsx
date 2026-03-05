@@ -135,10 +135,10 @@ export default function NuevaSolicitudPage() {
         const loadingToast = toast.loading(estado === 'Enviado' ? 'Enviando solicitud...' : 'Guardando borrador...');
 
         const payload = {
-            user_id: user.id, // Suponiendo tabla asegurada con RLS
+            solicitante_id: user.id, // Suponiendo tabla asegurada con RLS
             solicitante_email: user.email,
             solicitante_nombre: user.user_metadata?.full_name || user.email,
-            estado: estado,
+            status: estado,
             fecha_solicitud: new Date().toISOString(),
 
             // Info Solicitante
@@ -149,8 +149,8 @@ export default function NuevaSolicitudPage() {
             contacto: contacto,
 
             // Info Anticipo
-            concepto: concepto,
-            valor_total: totalAnticipo,
+            motivo: concepto,
+            monto_total: totalAnticipo,
 
             // Info Banco
             banco_entidad: banco,
@@ -164,6 +164,8 @@ export default function NuevaSolicitudPage() {
             // Firma
             firma_base64: signatureData
         };
+
+        console.log("Datos a enviar:", payload);
 
         try {
             // 1. Guardar en tabla anticipos
@@ -390,7 +392,7 @@ export default function NuevaSolicitudPage() {
                                                 type="button"
                                                 onClick={() => handleRemoveGasto(gasto.id)}
                                                 disabled={gastos.length <= 1}
-                                                style={{ pading: '6px', color: gastos.length > 1 ? 'var(--destructive)' : 'var(--muted-foreground)', opacity: gastos.length > 1 ? 1 : 0.5 }}
+                                                style={{ padding: '6px', color: gastos.length > 1 ? 'var(--destructive)' : 'var(--muted-foreground)', opacity: gastos.length > 1 ? 1 : 0.5 }}
                                             >
                                                 <Trash2 size={16} />
                                             </button>

@@ -38,17 +38,17 @@ export default function Home() {
         // 1. Fetch KPIs
         const { data: anticipos, error } = await supabase
           .from("anticipos")
-          .select("id, monto_total, estado, created_at");
+          .select("id, monto_total, status, created_at");
 
         if (error) throw error;
 
         if (anticipos) {
           const total = anticipos.length;
           const monto = anticipos
-            .filter(a => a.estado !== "Cerrado" && a.estado !== "Rechazado")
+            .filter(a => a.status !== "Cerrado" && a.status !== "Rechazado")
             .reduce((sum, a) => sum + (a.monto_total || 0), 0);
 
-          const pendientes = anticipos.filter(a => a.estado === "Pendiente").length;
+          const pendientes = anticipos.filter(a => a.status === "Pendiente").length;
           // De momento, vencidos mockeado o basado en fecha si tuviéramos campo fecha_vencimiento
           const vencidos = 0;
 
@@ -67,7 +67,7 @@ export default function Home() {
             id, 
             motivo, 
             monto_total, 
-            estado,
+            status,
             profiles (full_name)
           `)
           .order("created_at", { ascending: false })
@@ -226,10 +226,10 @@ export default function Home() {
                           borderRadius: "12px",
                           fontSize: "11px",
                           fontWeight: 600,
-                          background: item.estado === "Aprobado" ? "#f0fdf4" : item.estado === "Pendiente" ? "#fffbeb" : "#eff6ff",
-                          color: item.estado === "Aprobado" ? "#16a34a" : item.estado === "Pendiente" ? "#d97706" : "#2563eb",
+                          background: item.status === "Aprobado" ? "#f0fdf4" : item.status === "Pendiente" ? "#fffbeb" : "#eff6ff",
+                          color: item.status === "Aprobado" ? "#16a34a" : item.status === "Pendiente" ? "#d97706" : "#2563eb",
                           display: "inline-block"
-                        }}>{item.estado}</span>
+                        }}>{item.status}</span>
                       </td>
                     </tr>
                   )) : (
