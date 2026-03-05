@@ -1,0 +1,130 @@
+.topbar {
+    height: 64px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    flex-shrink: 0;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+.pageTitle {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--foreground);
+    letter-spacing: -0.5px;
+}
+
+.topbarRight {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.topbarSearch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fff;
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 16px;
+    min-width: 280px;
+    transition: all 0.2s ease;
+}
+
+.topbarSearch:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    transform: translateY(-1px);
+}
+
+.searchIcon {
+    color: var(--muted-foreground);
+}
+
+.searchInput {
+    background: none;
+    border: none;
+    outline: none;
+    font-size: 14px;
+    color: var(--foreground);
+    width: 100%;
+}
+
+.notifBtn {
+    position: relative;
+    padding: 8px;
+    border-radius: 8px;
+    color: var(--muted-foreground);
+    transition: all 0.2s ease;
+}
+
+.notifBtn:hover {
+    background: var(--background);
+    color: var(--foreground);
+}
+
+.notifDot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    background: var(--destructive);
+    border-radius: 50%;
+    border: 2px solid #ffffff;
+}
+
+.topbarUser {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+}
+
+.userAvatarSm {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.avatarImg {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.userNameSm {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--foreground);
+}
+
+@media (max-width: 768px) {
+    .topbar {
+        padding: 0 16px;
+    }
+
+    .topbarSearch {
+        display: none;
+    }
+
+    .userNameSm {
+        display: none;
+    }
+}

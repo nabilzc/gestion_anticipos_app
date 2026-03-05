@@ -4,6 +4,7 @@ import React from "react";
 import { useAuth } from "@/context/AuthContext";
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
+import Header from "./Header";
 
 export default function AppLayoutWrapper({ children }: { children: React.ReactNode }) {
     const { user, signOut } = useAuth();
@@ -19,11 +20,13 @@ export default function AppLayoutWrapper({ children }: { children: React.ReactNo
 
     return (
         <div style={{ display: "flex", minHeight: "100vh" }}>
-            {/* El Sidebar ya está optimizado para dispositivos móviles */}
             <Sidebar user={user} onLogout={signOut} />
-            <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
-                {children}
-            </div>
+            <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+                <Header user={user} />
+                <div style={{ flex: 1, overflow: "auto", position: "relative", padding: "24px" }}>
+                    {children}
+                </div>
+            </main>
         </div>
     );
 }
