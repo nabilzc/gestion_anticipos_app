@@ -8,6 +8,7 @@ import { Info, Plus, Trash2, Save, Send } from "lucide-react";
 import SignaturePad from "@/components/SignaturePad";
 import { numeroALetras } from "@/lib/utils/numeroALetras";
 import toast, { Toaster } from "react-hot-toast";
+import { sendAnticipoNotification } from "@/app/actions/sendEmail";
 
 type GastoItem = {
     id: string;
@@ -139,8 +140,8 @@ export default function NuevaSolicitudPage() {
 
         return null;
     };
-
     const handleSubmit = async (estado: "Borrador" | "Enviado") => {
+
         if (!user) {
             toast.error("Debes iniciar sesión para realizar esta acción");
             return;
@@ -216,6 +217,29 @@ export default function NuevaSolicitudPage() {
                 if (itemsError) {
                     console.error("Error al guardar ítems:", itemsError);
                     // Opcionalmente podemos notificar pero ya tenemos el anticipo padre creado
+                }
+
+                // 3. Enviar correo de notificación (Resend)
+                if (estado === "Enviado") {
+                    try {
+                        await sendAnticipoNotification({
+                            id: anticipoId,
+                            solicitante_nombre: user.user_metadata?.full_name || user.email || "Usuario",
+                            solicitante_email: user.email || "",
+                            motivo: concepto,
+                            monto_total: totalAnticipo,
+                            monto_letras: numeroALetras(totalAnticipo),
+                            banco_info: {
+                                entidad: banco,
+                                tipo_cuenta: tipoCuenta,
+                                numero_cuenta: numCuenta
+                            },
+                            items: gastos
+                        });
+                    } catch (emailErr) {
+                        console.error("No se pudo enviar el correo:", emailErr);
+                        // No fallamos la operación principal por un error de correo
+                    }
                 }
             }
 
