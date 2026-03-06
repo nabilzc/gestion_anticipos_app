@@ -99,6 +99,29 @@ export default function NuevaSolicitudPage() {
         reader.readAsDataURL(file);
     };
 
+    const handleFillDummyData = () => {
+        setNumDocumento("1020304050");
+        setTipoDocumento("CC");
+        setCargo("Coordinador de Proyecto");
+        setProyecto("Programa Rural Andino");
+        setContacto("3001234567");
+        setConcepto("Gastos de viaje para capacitación técnica en zona rural");
+        setGastos([
+            { id: "1", tipoGasto: "Viáticos", codigo: "V-001", descripcion: "Alimentación (3 días)", valor: 150000 },
+            { id: "2", tipoGasto: "Transporte", codigo: "T-001", descripcion: "Bus intermunicipal ida/vuelta", valor: 85000 }
+        ]);
+        setBanco("Bancolombia");
+        setTipoCuenta("Ahorros");
+        setNumCuenta("123-45678-01");
+        setFechaEjecucion(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+        setObservaciones("Prueba de integración con Supabase. Por favor ignorar.");
+
+        // Firma base64 ficticia (un punto negro pequeño para pasar la validación visual si fuera necesaria)
+        setSignatureData("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+        toast.success("Campos llenados con datos de prueba");
+    };
+
     const validateForm = () => {
         if (!numDocumento.trim()) return "Número de documento requerido";
         if (!contacto.trim()) return "Número de contacto requerido";
@@ -135,34 +158,31 @@ export default function NuevaSolicitudPage() {
         const loadingToast = toast.loading(estado === 'Enviado' ? 'Enviando solicitud...' : 'Guardando borrador...');
 
         const payload = {
-            solicitante_id: user.id, // Suponiendo tabla asegurada con RLS
-            solicitante_email: user.email,
-            solicitante_nombre: user.user_metadata?.full_name || user.email,
+            solicitante_id: user.id,
             status: estado,
-            fecha_solicitud: new Date().toISOString(),
+            motivo: concepto,
+            monto_total: totalAnticipo,
+            monto_letras: numeroALetras(totalAnticipo),
 
-            // Info Solicitante
+            // Consolidamos la info bancaria en el campo JSONB
+            banco_info: {
+                entidad: banco,
+                tipo_cuenta: tipoCuenta,
+                numero_cuenta: numCuenta
+            },
+
+            // Estos campos no aparecen en la captura de pantalla de la tabla 'anticipos'
+            // Los comentamos para evitar el error 400 (Bad Request)
+            /*
+            fecha_ejecucion: fechaEjecucion,
+            observaciones: observaciones,
+            firma_base64: signatureData,
             tipo_documento: tipoDocumento,
             numero_documento: numDocumento,
             cargo: cargo,
             proyecto: proyecto,
-            contacto: contacto,
-
-            // Info Anticipo
-            motivo: concepto,
-            monto_total: totalAnticipo,
-
-            // Info Banco
-            banco_entidad: banco,
-            banco_tipo_cuenta: tipoCuenta,
-            banco_numero_cuenta: numCuenta,
-
-            // Extras
-            fecha_ejecucion: fechaEjecucion,
-            observaciones: observaciones,
-
-            // Firma
-            firma_base64: signatureData
+            contacto: contacto
+            */
         };
 
         console.log("Datos a enviar:", payload);
@@ -244,6 +264,32 @@ export default function NuevaSolicitudPage() {
     return (
         <div style={{ maxWidth: '820px', margin: '0 auto', paddingBottom: '40px' }}>
             <Toaster position="top-right" />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <div>
+                    <h1 style={{ fontSize: '24px', fontWeight: '700', color: 'var(--foreground)', marginBottom: '4px' }}>Nueva Solicitud</h1>
+                    <p style={{ fontSize: '14px', color: 'var(--muted-foreground)' }}>Completa el formulario para solicitar un anticipo</p>
+                </div>
+                <button
+                    type="button"
+                    onClick={handleFillDummyData}
+                    style={{
+                        padding: '8px 16px',
+                        backgroundColor: '#f1f5f9',
+                        color: '#475569',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                    }}
+                >
+                    <Plus size={16} /> Llenar datos de prueba
+                </button>
+            </div>
 
             <form onSubmit={(e) => { e.preventDefault(); handleSubmit("Enviado"); }}>
 

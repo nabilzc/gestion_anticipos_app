@@ -197,7 +197,10 @@ export default function Home() {
           <section className="card" style={{ padding: 0, overflow: "hidden", borderRadius: "20px", border: "1px solid rgba(0,0,0,0.05)", background: "white" }}>
             <div style={{ padding: "1.5rem", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h2 style={{ fontSize: "1.1rem", fontWeight: 600, color: "#1e293b" }}>Actividad Reciente</h2>
-              <button style={{ color: "#2563eb", background: "none", border: "none", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}>
+              <button
+                onClick={() => router.push("/mis-anticipos")}
+                style={{ color: "#2563eb", background: "none", border: "none", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer" }}
+              >
                 Ver Todo <ArrowRight size={14} />
               </button>
             </div>
