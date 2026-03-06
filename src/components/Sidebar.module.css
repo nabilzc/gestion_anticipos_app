@@ -1,13 +1,13 @@
 .sidebar {
   width: 260px;
   min-width: 260px;
-  background: white;
+  background: var(--card);
   display: flex;
   flex-direction: column;
   height: 100vh;
   position: sticky;
   top: 0;
-  border-right: 1px solid #f3f4f6;
+  border-right: 1px solid var(--border);
   z-index: 100;
   transition: all 0.3s ease;
 }
@@ -74,9 +74,9 @@
 }
 
 .navItemActive {
-  background: #eff6ff;
-  color: #2563eb;
-  font-weight: 700;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font-weight: 600;
 }
 
 .icon {
@@ -87,7 +87,7 @@
 }
 
 .navItemActive .icon {
-  color: #2563eb;
+  color: var(--secondary-foreground);
 }
 
 .footer {
@@ -99,15 +99,16 @@
 }
 
 .userAvatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: #f1f5f9;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #2563eb;
+  color: var(--primary-foreground);
   font-weight: 700;
+  font-size: 13px;
 }
 
 .userInfo {

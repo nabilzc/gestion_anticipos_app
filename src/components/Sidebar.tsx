@@ -9,7 +9,11 @@ import {
   Receipt,
   HelpCircle,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  ClipboardCheck,
+  ArrowLeftRight,
+  BarChart3,
+  Settings2
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
@@ -32,7 +36,11 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Nueva Solicitud', href: '/solicitudes/nueva', icon: PlusCircle },
     { name: 'Mis Anticipos', href: '/mis-anticipos', icon: FileText },
+    { name: 'Aprobaciones', href: '/aprobaciones', icon: ClipboardCheck },
+    { name: 'Desembolsos', href: '/desembolsos', icon: ArrowLeftRight },
+    { name: 'Reportes', href: '/reportes', icon: BarChart3 },
     { name: 'Legalizaciones', href: '/legalizaciones', icon: Receipt },
+    { name: 'Administración', href: '/admin', icon: Settings2 },
   ];
 
   const isActive = (href: string) => {

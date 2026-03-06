@@ -1,24 +1,26 @@
 :root {
   --background: #f8fafc;
-  --foreground: #0f172a;
+  --foreground: #111827;
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #111827;
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #111827;
   --primary: #2563eb;
   --primary-foreground: #ffffff;
   --secondary: #eff6ff;
   --secondary-foreground: #2563eb;
   --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f1f5f9;
-  --accent-foreground: #1e293b;
+  --muted-foreground: #9ca3af;
+  --accent: #eff6ff;
+  --accent-foreground: #2563eb;
   --destructive: #ef4444;
-  --destructive-foreground: #f8fafc;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
+  --destructive-foreground: #ffffff;
+  --border: #f1f5f9;
+  --input: #f1f5f9;
   --ring: #2563eb;
-  --radius: 0.75rem;
+  --radius: 12px;
+
+  --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 * {
@@ -37,7 +39,7 @@ body {
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
