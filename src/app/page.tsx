@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { isAnticipoVencido, formatCurrency, formatDate } from "@/lib/utils/businessLogic";
 
 export default function Home() {
   const { user, signOut } = useAuth();
@@ -44,19 +45,22 @@ export default function Home() {
 
         if (anticipos) {
           const total = anticipos.length;
+          
+          // Solo sumamos los que están en 'Desembolsado' o 'Abierto'
           const monto = anticipos
-            .filter(a => a.status !== "Cerrado" && a.status !== "Rechazado")
+            .filter(a => a.status === "Desembolsado" || a.status === "Abierto")
             .reduce((sum, a) => sum + (a.monto_total || 0), 0);
 
           const pendientes = anticipos.filter(a => a.status === "Pendiente").length;
-          // De momento, vencidos mockeado o basado en fecha si tuviéramos campo fecha_vencimiento
-          const vencidos = 0;
+          
+          // Calculamos vencidos usando la utilería
+          const vencidosCount = anticipos.filter(a => isAnticipoVencido(a)).length;
 
           setStats({
             totalAnticipos: total,
             montoCirculacion: monto,
             pendientes: pendientes,
-            vencidos: vencidos,
+            vencidos: vencidosCount,
           });
         }
 
@@ -92,7 +96,7 @@ export default function Home() {
 
   const kpis = [
     { label: "Total Anticipos", value: stats.totalAnticipos.toString(), icon: <FileText />, sub: "Histórico", color: "#2563eb" },
-    { label: "Monto en Circulación", value: `$${stats.montoCirculacion.toLocaleString()}`, icon: <TrendingUp />, sub: "Activo", color: "#10b981" },
+    { label: "Monto en Circulación", value: formatCurrency(stats.montoCirculacion), icon: <TrendingUp />, sub: "Activo", color: "#10b981" },
     { label: "Por Aprobar", value: stats.pendientes.toString(), icon: <Clock />, sub: "Pendientes", color: "#f59e0b" },
     { label: "Vencidos", value: stats.vencidos.toString(), icon: <AlertCircle />, sub: "Urgente", color: "#f43f5e" },
   ];
@@ -218,21 +222,26 @@ export default function Home() {
                   {recentActivity.length > 0 ? recentActivity.map((item, i) => (
                     <tr key={i} style={{ borderBottom: i === recentActivity.length - 1 ? "none" : "1px solid #f1f5f9" }}>
                       <td style={{ padding: "1rem 1.5rem" }}>
-                        <div style={{ fontWeight: 700, color: "#2563eb", fontSize: "1rem" }}>{`ANT-${item.id.toString().padStart(3, '0')}`}</div>
+                        <div 
+                          onClick={() => router.push(`/mis-anticipos/${item.id}`)}
+                          style={{ fontWeight: 700, color: "#2563eb", fontSize: "1rem", cursor: "pointer", display: "inline-block" }}
+                        >
+                          {`ANT-${item.id.toString().padStart(3, '0')}`}
+                        </div>
                         <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{item.profiles?.full_name || "Usuario"}</div>
                       </td>
                       <td style={{ padding: "1rem 1.5rem", color: "#64748b" }}>{item.motivo}</td>
-                      <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>${(item.monto_total || 0).toLocaleString()}</td>
+                      <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>{formatCurrency(item.monto_total || 0)}</td>
                       <td style={{ padding: "1rem 1.5rem" }}>
                         <span style={{
                           padding: "4px 10px",
                           borderRadius: "12px",
                           fontSize: "11px",
                           fontWeight: 600,
-                          background: item.status === "Aprobado" ? "#f0fdf4" : item.status === "Pendiente" ? "#fffbeb" : "#eff6ff",
-                          color: item.status === "Aprobado" ? "#16a34a" : item.status === "Pendiente" ? "#d97706" : "#2563eb",
+                          background: isAnticipoVencido(item) ? "#fef2f2" : item.status === "Aprobado" ? "#f0fdf4" : item.status === "Pendiente" ? "#fffbeb" : "#eff6ff",
+                          color: isAnticipoVencido(item) ? "#ef4444" : item.status === "Aprobado" ? "#16a34a" : item.status === "Pendiente" ? "#d97706" : "#2563eb",
                           display: "inline-block"
-                        }}>{item.status}</span>
+                        }}>{isAnticipoVencido(item) ? "Vencido" : item.status}</span>
                       </td>
                     </tr>
                   )) : (

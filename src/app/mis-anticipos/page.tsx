@@ -4,13 +4,9 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import {
-    Plus,
-    Eye,
-    Clock,
-    Search
-} from "lucide-react";
+import { Plus, Eye, Clock, Search } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
+import { isAnticipoVencido, formatCurrency, formatDate } from "@/lib/utils/businessLogic";
 
 export default function MisAnticiposPage() {
     const { user } = useAuth();
@@ -48,7 +44,10 @@ export default function MisAnticiposPage() {
         (a.id || "").toString().includes(searchTerm)
     );
 
-    const getStatusBadge = (status: string) => {
+    const getStatusBadge = (anticipo: any) => {
+        const isVencido = isAnticipoVencido(anticipo);
+        const status = isVencido ? "Vencido" : anticipo.status;
+
         const styles: Record<string, any> = {
             "Borrador": { bg: "#f1f5f9", text: "#64748b" },
             "Enviado": { bg: "#eff6ff", text: "#2563eb" },
@@ -56,6 +55,9 @@ export default function MisAnticiposPage() {
             "Aprobado": { bg: "#f0fdf4", text: "#16a34a" },
             "Rechazado": { bg: "#fef2f2", text: "#ef4444" },
             "Cerrado": { bg: "#fafafa", text: "#71717a" },
+            "Vencido": { bg: "#fef2f2", text: "#ef4444" },
+            "Abierto": { bg: "#eff6ff", text: "#2563eb" },
+            "Desembolsado": { bg: "#f0fdf4", text: "#16a34a" },
         };
 
         const style = styles[status] || styles["Borrador"];
@@ -141,7 +143,7 @@ export default function MisAnticiposPage() {
                                         <td style={{ padding: '16px 20px' }}>
                                             <div style={{ fontWeight: '700', color: 'var(--primary)' }}>#ANT-{String(a.id).slice(-4)}</div>
                                             <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginTop: '2px' }}>
-                                                {new Date(a.created_at).toLocaleDateString('es-CO')}
+                                                {formatDate(a.created_at)}
                                             </div>
                                         </td>
                                         <td style={{ padding: '16px 20px', maxWidth: '300px' }}>
@@ -151,14 +153,14 @@ export default function MisAnticiposPage() {
                                             <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', marginTop: '2px' }}>{a.proyecto}</div>
                                         </td>
                                         <td style={{ padding: '16px 20px', fontWeight: '600' }}>
-                                            $ {(a.monto_total || 0).toLocaleString('es-CO')}
+                                            {formatCurrency(a.monto_total || 0)}
                                         </td>
                                         <td style={{ padding: '16px 20px' }}>
-                                            {getStatusBadge(a.status)}
+                                            {getStatusBadge(a)}
                                         </td>
                                         <td style={{ padding: '16px 20px', textAlign: 'right' }}>
                                             <button
-                                                onClick={() => router.push(`/solicitudes/detalle?id=${a.id}`)}
+                                                onClick={() => router.push(`/mis-anticipos/${a.id}`)}
                                                 style={{ padding: '8px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--muted-foreground)', cursor: 'pointer', transition: 'all 0.2s' }}
                                             >
                                                 <Eye size={18} />
