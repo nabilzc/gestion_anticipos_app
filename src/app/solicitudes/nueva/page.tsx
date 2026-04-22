@@ -108,7 +108,7 @@ export default function NuevaSolicitudPage() {
         setContacto("3001234567");
         setConcepto("Gastos de viaje para capacitación técnica en zona rural");
         setGastos([
-            { id: "1", tipoGasto: "Viáticos", codigo: "V-001", descripcion: "Alimentación (3 días)", valor: 150000 },
+            { id: "1", tipoGasto: "Viáticos", codigo: "V-001", descripcion: "Alimentación (5 días)", valor: 150000 },
             { id: "2", tipoGasto: "Transporte", codigo: "T-001", descripcion: "Bus intermunicipal ida/vuelta", valor: 85000 }
         ]);
         setBanco("Bancolombia");
@@ -165,16 +165,10 @@ export default function NuevaSolicitudPage() {
             monto_total: totalAnticipo,
             monto_letras: numeroALetras(totalAnticipo),
 
-            // Consolidamos la info bancaria en el campo JSONB
-            banco_info: {
-                entidad: banco,
-                tipo_cuenta: tipoCuenta,
-                numero_cuenta: numCuenta
-            },
+            banco_nombre: banco,
+            banco_tipo_cuenta: tipoCuenta,
+            banco_numero_cuenta: numCuenta,
 
-            // Estos campos no aparecen en la captura de pantalla de la tabla 'anticipos'
-            // Los comentamos para evitar el error 400 (Bad Request)
-            /*
             fecha_ejecucion: fechaEjecucion,
             observaciones: observaciones,
             firma_base64: signatureData,
@@ -183,22 +177,25 @@ export default function NuevaSolicitudPage() {
             cargo: cargo,
             proyecto: proyecto,
             contacto: contacto
-            */
         };
 
         console.log("Datos a enviar:", payload);
 
         try {
-            // 1. Guardar en tabla anticipos
+            console.log("Insertando anticipo...");
             const { data: anticipoData, error: anticipoError } = await supabase
                 .from('anticipos')
                 .insert([payload])
                 .select()
                 .single();
 
-            if (anticipoError) throw anticipoError;
+            if (anticipoError) {
+                console.error("Error en tabla anticipos:", anticipoError);
+                throw new Error(`DB Error (Anticipos): ${anticipoError.message}`);
+            }
 
             const anticipoId = anticipoData.id;
+            console.log("Anticipo creado con ID:", anticipoId);
 
             // 2. Guardar los items en tabla anticipo_items
             if (anticipoId) {
@@ -210,6 +207,7 @@ export default function NuevaSolicitudPage() {
                     valor: Number(g.valor) || 0
                 }));
 
+                console.log("Insertando items:", itemsPayload);
                 const { error: itemsError } = await supabase
                     .from('anticipo_items')
                     .insert(itemsPayload);
@@ -250,9 +248,15 @@ export default function NuevaSolicitudPage() {
                 router.push("/mis-anticipos");
             }, 1500);
 
-        } catch (err) {
-            console.error(err);
-            toast.error("Error al guardar en la base de datos", { id: loadingToast });
+        } catch (err: any) {
+            console.error("Detailed Error catch:", err);
+            const errorMessage = err?.message || (typeof err === 'string' ? err : "Error desconocido");
+            toast.error(`Error: ${errorMessage}`, { id: loadingToast });
+
+            // Si es un fetch error, dar más contexto
+            if (errorMessage.includes("fetch")) {
+                toast.error("Verifica tu conexión y los valores de Supabase en .env.local", { duration: 5000 });
+            }
 
             // BACKUP OFFLINE
             saveOfflineBackup(payload, gastos);

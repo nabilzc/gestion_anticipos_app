@@ -4,27 +4,44 @@
 
 /**
  * Determina si un anticipo está vencido.
- * Un anticipo se considera vencido si han pasado más de 3 días desde la 'fecha_ejecucion'
+ * Un anticipo se considera vencido si han pasado más de 5 días HÁBILES desde la 'fecha_ejecucion'
  * (o 'created_at' si no hay fecha_ejecucion) y el estado no es 'Cerrado', 'Borrador' o 'Rechazado'.
  */
 export const isAnticipoVencido = (anticipo: any): boolean => {
     const { status, fecha_ejecucion, created_at } = anticipo;
 
     // Estados que no pueden estar vencidos
-    if (["Cerrado", "Borrador", "Rechazado"].includes(status)) {
+    if (["Cerrado", "Borrador", "Rechazado", "Aprobado", "En Revisión", "Legalizado"].includes(status)) {
         return false;
     }
 
     const fechaReferencia = fecha_ejecucion || created_at;
     if (!fechaReferencia) return false;
 
+    // Normalizamos las fechas para comparar solo días, ignorando la hora
     const hoy = new Date();
-    const fechaRef = new Date(fechaReferencia);
+    hoy.setHours(0, 0, 0, 0);
     
-    const diffTime = hoy.getTime() - fechaRef.getTime();
-    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+    const fechaRef = new Date(fechaReferencia);
+    fechaRef.setHours(0, 0, 0, 0);
+    
+    // Si la fecha de ejecución es futura o es hoy, no está vencido
+    if (fechaRef >= hoy) return false;
 
-    return diffDays > 3;
+    // Calculamos días hábiles transcurridos (Lun-Vie)
+    let businessDays = 0;
+    let current = new Date(fechaRef);
+    
+    while (current < hoy) {
+        current.setDate(current.getDate() + 1);
+        const day = current.getDay();
+        if (day !== 0 && day !== 6) { // No es Sábado ni Domingo
+            businessDays++;
+        }
+    }
+
+    // Un anticipo se vence después del 5to día hábil
+    return businessDays > 5;
 };
 
 /**

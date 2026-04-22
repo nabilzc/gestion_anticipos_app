@@ -46,12 +46,12 @@ export default function Home() {
         if (anticipos) {
           const total = anticipos.length;
           
-          // Solo sumamos los que están en 'Desembolsado' o 'Abierto'
+          // Solo sumamos los que están en 'Desembolsado'
           const monto = anticipos
-            .filter(a => a.status === "Desembolsado" || a.status === "Abierto")
+            .filter(a => a.status === "Desembolsado")
             .reduce((sum, a) => sum + (a.monto_total || 0), 0);
 
-          const pendientes = anticipos.filter(a => a.status === "Pendiente").length;
+          const pendientes = anticipos.filter(a => a.status === "Pendiente" || a.status === "Enviado").length;
           
           // Calculamos vencidos usando la utilería
           const vencidosCount = anticipos.filter(a => isAnticipoVencido(a)).length;
@@ -212,7 +212,7 @@ export default function Home() {
               <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                 <thead>
                   <tr style={{ background: "#f8fafc", fontSize: "0.75rem", textTransform: "uppercase", color: "#94a3b8", letterSpacing: "0.05em" }}>
-                    <th style={{ padding: "1rem 1.5rem" }}>ID / Solicitante</th>
+                    <th style={{ padding: "1rem 1.5rem" }}>Solicitante</th>
                     <th style={{ padding: "1rem 1.5rem" }}>Concepto</th>
                     <th style={{ padding: "1rem 1.5rem" }}>Monto</th>
                     <th style={{ padding: "1rem 1.5rem" }}>Estado</th>
@@ -224,11 +224,13 @@ export default function Home() {
                       <td style={{ padding: "1rem 1.5rem" }}>
                         <div 
                           onClick={() => router.push(`/mis-anticipos/${item.id}`)}
-                          style={{ fontWeight: 700, color: "#2563eb", fontSize: "1rem", cursor: "pointer", display: "inline-block" }}
+                          style={{ fontWeight: 700, color: "#3b82f6", fontSize: "0.95rem", cursor: "pointer", display: "inline-block" }}
                         >
-                          {`ANT-${item.id.toString().padStart(3, '0')}`}
+                          {item.profiles?.full_name || "Usuario"}
                         </div>
-                        <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{item.profiles?.full_name || "Usuario"}</div>
+                        <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "2px" }}>
+                          ID: {item.id.toString().slice(-4).toUpperCase()}
+                        </div>
                       </td>
                       <td style={{ padding: "1rem 1.5rem", color: "#64748b" }}>{item.motivo}</td>
                       <td style={{ padding: "1rem 1.5rem", fontWeight: 600, color: "#1e293b" }}>{formatCurrency(item.monto_total || 0)}</td>
@@ -238,8 +240,8 @@ export default function Home() {
                           borderRadius: "12px",
                           fontSize: "11px",
                           fontWeight: 600,
-                          background: isAnticipoVencido(item) ? "#fef2f2" : item.status === "Aprobado" ? "#f0fdf4" : item.status === "Pendiente" ? "#fffbeb" : "#eff6ff",
-                          color: isAnticipoVencido(item) ? "#ef4444" : item.status === "Aprobado" ? "#16a34a" : item.status === "Pendiente" ? "#d97706" : "#2563eb",
+                          background: (isAnticipoVencido(item) || item.status === "Rechazado") ? "#fef2f2" : item.status === "Aprobado" ? "#f0fdf4" : (item.status === "Pendiente" || item.status === "Enviado") ? "#fffbeb" : "#eff6ff",
+                          color: (isAnticipoVencido(item) || item.status === "Rechazado") ? "#ef4444" : item.status === "Aprobado" ? "#16a34a" : (item.status === "Pendiente" || item.status === "Enviado") ? "#d97706" : "#2563eb",
                           display: "inline-block"
                         }}>{isAnticipoVencido(item) ? "Vencido" : item.status}</span>
                       </td>
@@ -265,19 +267,22 @@ export default function Home() {
               boxShadow: "0 10px 15px -3px rgba(37, 99, 235, 0.1)"
             }}>
               <h3 style={{ fontSize: "1.1rem", fontWeight: 800, marginBottom: "0.75rem", color: "#2563eb" }}>Legalización Pendiente</h3>
-              <p style={{ fontSize: "0.875rem", color: "#1e40af", marginBottom: "1.5rem", lineHeight: 1.5, fontWeight: 500 }}>Tienes 3 anticipos entregados que requieren subir facturas de soporte.</p>
-              <button style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: "12px",
-                background: "#2563eb",
-                color: "white",
-                border: "none",
-                fontWeight: 700,
-                cursor: "pointer",
-                boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)",
-                transition: "all 0.2s"
-              }}>
+              <p style={{ fontSize: "0.875rem", color: "#1e40af", marginBottom: "1.5rem", lineHeight: 1.5, fontWeight: 500 }}>Recuerda cargar tus soportes dentro de los 5 días hábiles posteriores a la ejecución.</p>
+              <button 
+                onClick={() => router.push("/legalizaciones")}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: "12px",
+                  background: "#2563eb",
+                  color: "white",
+                  border: "none",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)",
+                  transition: "all 0.2s"
+                }}
+              >
                 Ir a Legalizaciones
               </button>
             </div>

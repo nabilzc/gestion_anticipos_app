@@ -221,7 +221,7 @@ export default function DetalleAnticipoPage() {
             doc.setTextColor(50, 50, 50);
             doc.text("PAGO A FAVOR DE:", margin + 5, currentY + 6);
             doc.setFont("helvetica", "normal");
-            doc.text(`${anticipo.banco_info?.entidad} - ${anticipo.banco_info?.tipo_cuenta} No. ${anticipo.banco_info?.numero_cuenta}`, margin + 5, currentY + 11);
+            doc.text(`${anticipo.banco_nombre || 'N/A'} - ${anticipo.banco_tipo_cuenta || ''} No. ${anticipo.banco_numero_cuenta || ''}`, margin + 5, currentY + 11);
 
             // 7. Firmas
             const signatureAreaY = currentY + 45;
@@ -480,8 +480,8 @@ export default function DetalleAnticipoPage() {
                             </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b' }}>{anticipo.banco_info?.entidad || 'N/A'}</div>
-                            <div style={{ fontSize: '14px', color: '#64748b' }}>{anticipo.banco_info?.tipo_cuenta} No. {anticipo.banco_info?.numero_cuenta}</div>
+                            <div style={{ fontSize: '16px', fontWeight: 700, color: '#1e293b' }}>{anticipo.banco_nombre || 'N/A'}</div>
+                            <div style={{ fontSize: '14px', color: '#64748b' }}>{anticipo.banco_tipo_cuenta} No. {anticipo.banco_numero_cuenta}</div>
                         </div>
                     </div>
 

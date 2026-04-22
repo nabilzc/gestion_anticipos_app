@@ -22,4 +22,12 @@ const getSupabaseConfig = () => {
 
 const config = getSupabaseConfig();
 
+if (typeof window !== 'undefined') {
+  console.log('Supabase Config:', { 
+    url: config.url, 
+    hasKey: !!config.key,
+    isPlaceholder: config.url.includes('placeholder')
+  });
+}
+
 export const supabase = createClient(config.url, config.key);
