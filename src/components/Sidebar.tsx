@@ -40,6 +40,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     { name: 'Desembolsos', href: '/desembolsos', icon: ArrowLeftRight },
     { name: 'Reportes', href: '/reportes', icon: BarChart3 },
     { name: 'Legalizaciones', href: '/legalizaciones', icon: Receipt },
+    { name: 'Administración', href: '/administracion', icon: Settings2 },
   ];
 
   const isActive = (href: string) => {
