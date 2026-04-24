@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { ALLOWED_EMAILS } from "@/lib/constants";
 import {
     ArrowLeft,
     User,
@@ -32,7 +32,7 @@ interface Profile {
 
 export default function ProfilePage() {
     const router = useRouter();
-    const [user, setUser] = useState<any>(null);
+    const { user: authUser } = useAuth();
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -41,19 +41,15 @@ export default function ProfilePage() {
 
     useEffect(() => {
         const loadProfile = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-
-            if (!session || !session.user.email || !ALLOWED_EMAILS.includes(session.user.email)) {
+            if (!authUser) {
                 router.push("/login");
                 return;
             }
 
-            setUser(session.user);
-
             const { data, error } = await supabase
                 .from("profiles")
                 .select("*")
-                .eq("id", session.user.id)
+                .eq("id", authUser.id)
                 .single();
 
             if (data) {
@@ -61,9 +57,9 @@ export default function ProfilePage() {
             } else {
                 // Si no existe perfil, crear uno con datos mínimos
                 setProfile({
-                    id: session.user.id,
-                    email: session.user.email || "",
-                    full_name: session.user.user_metadata?.full_name || "",
+                    id: authUser.id,
+                    email: authUser.email || "",
+                    full_name: authUser.user_metadata?.full_name || "",
                     cedula: "",
                     cargo: "",
                     banco: "",
@@ -78,7 +74,7 @@ export default function ProfilePage() {
         };
 
         loadProfile();
-    }, [router]);
+    }, [router, authUser]);
 
     const handleChange = (field: keyof Profile, value: string) => {
         if (!profile) return;
@@ -183,12 +179,12 @@ export default function ProfilePage() {
 
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                     <div style={{ textAlign: "right", lineHeight: 1.2 }}>
-                        <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{user?.user_metadata?.full_name || user?.email}</div>
+                        <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{authUser?.user_metadata?.full_name || authUser?.email}</div>
                         <div style={{ fontSize: "0.75rem", color: "var(--muted-foreground)" }}>Perfil</div>
                     </div>
                     <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#e2e8f0", display: "grid", placeItems: "center", overflow: "hidden" }}>
-                        {user?.user_metadata?.avatar_url ? (
-                            <img src={user.user_metadata.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        {authUser?.user_metadata?.avatar_url ? (
+                            <img src={authUser.user_metadata.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
                             <User size={18} />
                         )}
@@ -224,8 +220,8 @@ export default function ProfilePage() {
                         overflow: "hidden",
                         flexShrink: 0
                     }}>
-                        {user?.user_metadata?.avatar_url ? (
-                            <img src={user.user_metadata.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        {authUser?.user_metadata?.avatar_url ? (
+                            <img src={authUser.user_metadata.avatar_url} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
                             <User size={28} />
                         )}

@@ -3,11 +3,12 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { ALLOWED_EMAILS } from "@/lib/constants";
+import { type AppUser, clearDevAuthUser, getDevAuthUser } from "@/lib/devAuth";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
 interface AuthContextType {
-    user: any;
+    user: AppUser | null;
     loading: boolean;
     signOut: () => Promise<void>;
 }
@@ -15,7 +16,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<AppUser | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
     const pathname = usePathname();
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             console.log("Auth event:", event, "session user:", session?.user?.email);
             if (session) {
+                clearDevAuthUser();
                 if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
                     setUser(session.user);
                     setLoading(false);
@@ -48,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const checkUser = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
+                clearDevAuthUser();
                 if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
                     setUser(session.user);
                 } else {
@@ -56,11 +59,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     router.push("/login?error=unauthorized");
                 }
             } else {
+                const devUser = getDevAuthUser();
+                if (devUser) {
+                    setUser(devUser);
+                    setLoading(false);
+                    return;
+                }
+
                 if (pathname !== "/login" && !pathname.startsWith("/auth/")) {
                     // Small delay to allow hash processing if needed
                     setTimeout(async () => {
                         const { data: { session: delayedSession } } = await supabase.auth.getSession();
-                        if (!delayedSession && pathname !== "/login" && !pathname.startsWith("/auth/")) {
+                        if (!delayedSession && !getDevAuthUser() && pathname !== "/login" && !pathname.startsWith("/auth/")) {
                             router.push("/login");
                         }
                         setLoading(false);
@@ -76,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [router, pathname]);
 
     const signOut = async () => {
+        clearDevAuthUser();
         await supabase.auth.signOut();
         router.push("/login");
     };

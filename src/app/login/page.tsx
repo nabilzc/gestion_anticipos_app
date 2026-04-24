@@ -3,12 +3,18 @@
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useState, Suspense } from "react";
-import { LogIn, AlertCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ensureLocalDevUser } from "@/app/actions/ensureLocalDevUser";
+import { isDevAuthBypassEnabled, setDevAuthUser } from "@/lib/devAuth";
+import { AlertCircle } from "lucide-react";
 
 function LoginContent() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const error = searchParams.get("error");
     const [loading, setLoading] = useState(false);
+    const [devLoading, setDevLoading] = useState(false);
+    const showDevBypass = isDevAuthBypassEnabled();
 
     const handleLogin = async () => {
         setLoading(true);
@@ -20,10 +26,29 @@ function LoginContent() {
                 },
             });
             if (error) throw error;
-        } catch (error: any) {
-            alert(error.message);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "No fue posible iniciar sesión.";
+            alert(message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDevLogin = async () => {
+        setDevLoading(true);
+        try {
+            const result = await ensureLocalDevUser();
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+
+            setDevAuthUser(result.user);
+            router.push("/");
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "No fue posible preparar el usuario local.";
+            alert(message);
+        } finally {
+            setDevLoading(false);
         }
     };
 
@@ -86,7 +111,7 @@ function LoginContent() {
 
                 <button
                     onClick={handleLogin}
-                    disabled={loading}
+                    disabled={loading || devLoading}
                     style={{
                         width: "100%",
                         display: "flex",
@@ -133,6 +158,33 @@ function LoginContent() {
                         </>
                     )}
                 </button>
+
+                {showDevBypass && (
+                    <button
+                        onClick={handleDevLogin}
+                        disabled={loading || devLoading}
+                        style={{
+                            width: "100%",
+                            marginTop: "0.75rem",
+                            padding: "0.75rem 1.5rem",
+                            background: "#eff6ff",
+                            border: "1px solid #bfdbfe",
+                            borderRadius: "12px",
+                            fontSize: "0.95rem",
+                            fontWeight: 600,
+                            color: "#1d4ed8",
+                            cursor: loading || devLoading ? "not-allowed" : "pointer"
+                        }}
+                    >
+                        {devLoading ? "Entrando..." : "Entrar en modo local"}
+                    </button>
+                )}
+
+                {showDevBypass && (
+                    <p style={{ marginTop: "0.75rem", fontSize: "0.8rem", color: "#64748b" }}>
+                        Bypass temporal solo para localhost. No crea una sesión real de Supabase.
+                    </p>
+                )}
 
                 <p style={{ marginTop: "2rem", fontSize: "0.875rem", color: "#94a3b8" }}>
                     © 2024 FUNDAEC ERP
