@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network } from "lucide-react";
+import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network, ShieldCheck, Send } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
 export default function AdministracionPage() {
@@ -13,11 +13,21 @@ export default function AdministracionPage() {
     const [programasProyectos, setProgramasProyectos] = useState<any[]>([]);
     const [centrosCostos, setCentrosCostos] = useState<any[]>([]);
     const [conexiones, setConexiones] = useState<any[]>([]);
+    const [responsables, setResponsables] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     
     // User Edit States
     const [editingUser, setEditingUser] = useState<any>(null);
-    const [editForm, setEditForm] = useState({ role: '', programa: '', region: '', centro_costos_id: '' });
+    const [editForm, setEditForm] = useState({ 
+        role: '', 
+        programa: '', 
+        region: '', 
+        centro_costos_id: '',
+        telefono: '',
+        es_solicitante: false,
+        es_aprobador: false,
+        responsabilidades: [] as string[]
+    });
     const [saving, setSaving] = useState(false);
 
     // Form States for Maestro
@@ -29,22 +39,25 @@ export default function AdministracionPage() {
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [profilesRes, centrosRes, programasRes, conexionesRes] = await Promise.all([
+            const [profilesRes, centrosRes, programasRes, conexionesRes, responsablesRes] = await Promise.all([
                 supabase.from("profiles").select("*").order("full_name", { ascending: true }),
                 supabase.from("centros_costos").select("*").order("nombre", { ascending: true }),
                 supabase.from("programas_proyectos_areas").select("*").order("nombre", { ascending: true }),
-                supabase.from("conexiones_financieras").select("*")
+                supabase.from("conexiones_financieras").select("*"),
+                supabase.from("responsables_programas").select("*")
             ]);
 
             if (profilesRes.error) throw profilesRes.error;
             if (centrosRes.error && centrosRes.error.code !== '42P01') console.error("Error fetching centros:", centrosRes.error);
             if (programasRes.error && programasRes.error.code !== '42P01') console.error("Error fetching programas:", programasRes.error);
             if (conexionesRes.error && conexionesRes.error.code !== '42P01') console.error("Error fetching conexiones:", conexionesRes.error);
+            if (responsablesRes.error && responsablesRes.error.code !== '42P01') console.error("Error fetching responsables:", responsablesRes.error);
 
             setProfiles(profilesRes.data || []);
             setCentrosCostos(centrosRes.data || []);
             setProgramasProyectos(programasRes.data || []);
             setConexiones(conexionesRes.data || []);
+            setResponsables(responsablesRes.data || []);
         } catch (err) {
             console.error("Error fetching data:", err);
             toast.error("Error al cargar los datos");
@@ -60,11 +73,20 @@ export default function AdministracionPage() {
     // -------- USER EDIT LOGIC --------
     const handleEditClick = (user: any) => {
         setEditingUser(user);
+        
+        const userResponsabilidades = responsables
+            .filter(r => String(r.usuario_id) === String(user.id))
+            .map(r => String(r.estructura_id));
+
         setEditForm({
             role: user.role || 'Solicitante',
             programa: user.programa || '',
             region: user.region || '',
-            centro_costos_id: user.centro_costos_id || ''
+            centro_costos_id: user.centro_costos_id || '',
+            telefono: user.telefono || '',
+            es_solicitante: user.es_solicitante || false,
+            es_aprobador: user.es_aprobador || false,
+            responsabilidades: userResponsabilidades
         });
     };
 
@@ -75,7 +97,10 @@ export default function AdministracionPage() {
             const updateData: any = { 
                 role: editForm.role, 
                 programa: editForm.programa, 
-                centro_costos_id: editForm.centro_costos_id || null
+                centro_costos_id: editForm.centro_costos_id || null,
+                telefono: editForm.telefono,
+                es_solicitante: editForm.es_solicitante,
+                es_aprobador: editForm.es_aprobador
             };
             
             // Validar región para PAS
@@ -94,6 +119,23 @@ export default function AdministracionPage() {
             if (error) {
                 console.error("Supabase Error [Update Profile]:", error);
                 throw error;
+            }
+            
+            // Sincronizar Responsabilidades
+            const { error: delError } = await supabase.from('responsables_programas').delete().eq('usuario_id', editingUser.id);
+            if (delError && delError.code !== '42P01') {
+                console.error("Error borrando responsabilidades:", delError);
+            }
+            
+            if (editForm.responsabilidades.length > 0 && editForm.es_aprobador) {
+                const newResponsables = editForm.responsabilidades.map(eid => ({
+                    usuario_id: editingUser.id,
+                    estructura_id: eid
+                }));
+                const { error: insError } = await supabase.from('responsables_programas').insert(newResponsables);
+                if (insError && insError.code !== '42P01') {
+                    console.error("Supabase Error [Insert Responsables]:", insError);
+                }
             }
             
             toast.success('Usuario actualizado con éxito');
@@ -238,7 +280,7 @@ export default function AdministracionPage() {
                     <h1 style={{ fontSize: '28px', fontWeight: '700', color: 'var(--foreground)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Users size={28} color="var(--primary)" /> Administración
                     </h1>
-                    <p style={{ fontSize: '15px', color: 'var(--muted-foreground)' }}>Gestión del sistema, usuarios y configuración maestra</p>
+                    <p style={{ fontSize: '15px', color: 'var(--muted-foreground)' }}>Consola de Gestión de Talento y Configuración Maestra</p>
                 </div>
             </div>
 
@@ -253,7 +295,7 @@ export default function AdministracionPage() {
                         cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease'
                     }}
                 >
-                    <Users size={18} /> Usuarios
+                    <Users size={18} /> Talento y Permisos
                 </button>
                 <button
                     onClick={() => setActiveTab('maestro')}
@@ -278,9 +320,9 @@ export default function AdministracionPage() {
                                     <th style={{ padding: '12px 20px' }}>Nombre</th>
                                     <th style={{ padding: '12px 20px' }}>Email</th>
                                     <th style={{ padding: '12px 20px' }}>Rol</th>
+                                    <th style={{ padding: '12px 20px' }}>Permisos</th>
                                     <th style={{ padding: '12px 20px' }}>Centro de Costos</th>
                                     <th style={{ padding: '12px 20px' }}>Programa/Proyecto</th>
-                                    <th style={{ padding: '12px 20px' }}>Región</th>
                                     <th style={{ padding: '12px 20px', textAlign: 'right' }}>Acciones</th>
                                 </tr>
                             </thead>
@@ -289,14 +331,17 @@ export default function AdministracionPage() {
                                     <tr>
                                         <td colSpan={7} style={{ padding: '40px', textAlign: 'center' }}>
                                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', color: 'var(--muted-foreground)' }}>
-                                                <Clock size={20} className="animate-spin" /> Cargando usuarios...
+                                                <Clock size={20} className="animate-spin" /> Cargando talentos...
                                             </div>
                                         </td>
                                     </tr>
                                 ) : profiles.length > 0 ? (
                                     profiles.map((p) => (
                                         <tr key={p.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '14px' }}>
-                                            <td style={{ padding: '16px 20px', fontWeight: '600', color: 'var(--foreground)' }}>{p.full_name || "Sin nombre"}</td>
+                                            <td style={{ padding: '16px 20px', fontWeight: '600', color: 'var(--foreground)' }}>
+                                                <div>{p.full_name || "Sin nombre"}</div>
+                                                {p.telefono && <div style={{ fontSize: '11px', color: 'var(--muted-foreground)', marginTop: '2px' }}>{p.telefono}</div>}
+                                            </td>
                                             <td style={{ padding: '16px 20px', color: 'var(--muted-foreground)' }}>{p.email}</td>
                                             <td style={{ padding: '16px 20px' }}>
                                                 <span style={{ padding: "4px 10px", borderRadius: "12px", fontSize: "12px", fontWeight: 600, backgroundColor: p.role?.includes('Administrador') ? '#fef2f2' : '#f1f5f9', color: p.role?.includes('Administrador') ? '#ef4444' : '#64748b', display: "inline-block" }}>
@@ -304,10 +349,16 @@ export default function AdministracionPage() {
                                                 </span>
                                             </td>
                                             <td style={{ padding: '16px 20px' }}>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    {p.es_aprobador && <ShieldCheck size={18} color="#10b981" title="Permiso para Aprobar" />}
+                                                    {p.es_solicitante && <Send size={18} color="#3b82f6" title="Permiso para Solicitar" />}
+                                                    {!p.es_aprobador && !p.es_solicitante && <span style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>-</span>}
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '16px 20px' }}>
                                                 {p.centro_costos_id ? (centrosCostos.find(c => String(c.id) === String(p.centro_costos_id))?.nombre || p.centro_costos_id) : "-"}
                                             </td>
                                             <td style={{ padding: '16px 20px' }}>{p.programa || "-"}</td>
-                                            <td style={{ padding: '16px 20px' }}>{p.region || "-"}</td>
                                             <td style={{ padding: '16px 20px', textAlign: 'right' }}>
                                                 <button onClick={() => handleEditClick(p)} title="Editar usuario" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: '4px' }}>
                                                     <Pencil size={18} />
@@ -350,7 +401,7 @@ export default function AdministracionPage() {
                             >
                                 <option value="Programa">Programa</option>
                                 <option value="Proyecto">Proyecto</option>
-                                <option value="Área">Área</option>
+                                <option value="Area">Area</option>
                             </select>
                             <input 
                                 type="text" 
@@ -520,20 +571,80 @@ export default function AdministracionPage() {
             {/* Modal de Edición de Usuario */}
             {editingUser && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '20px' }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '400px', backgroundColor: 'var(--background)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>Editar Usuario</h3>
+                    <div className="card" style={{ width: '100%', maxWidth: '400px', backgroundColor: 'var(--background)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>Gestión de Talento</h3>
                             <button onClick={() => setEditingUser(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
                                 <X size={20} />
                             </button>
                         </div>
                         
-                        <div style={{ marginBottom: '16px' }}>
+                        <div style={{ overflowY: 'auto', paddingRight: '4px', marginBottom: '16px', flex: 1 }}>
                             <p style={{ margin: '0 0 16px 0', fontSize: '14px', color: 'var(--muted-foreground)' }}>
                                 Editando a: <strong>{editingUser.full_name || editingUser.email}</strong>
                             </p>
+
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>Teléfono</label>
+                            <input 
+                                type="text"
+                                value={editForm.telefono}
+                                onChange={(e) => setEditForm({...editForm, telefono: e.target.value})}
+                                placeholder="Ej: +57 300 000 0000"
+                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '16px', backgroundColor: 'var(--background)', color: 'var(--foreground)' }}
+                            />
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px', padding: '12px', backgroundColor: 'var(--muted)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}>
+                                    <input 
+                                        type="checkbox"
+                                        checked={editForm.es_solicitante}
+                                        onChange={(e) => setEditForm({...editForm, es_solicitante: e.target.checked})}
+                                        style={{ width: '16px', height: '16px' }}
+                                    />
+                                    <Send size={16} color="var(--primary)" /> Permiso para Solicitar
+                                </label>
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}>
+                                    <input 
+                                        type="checkbox"
+                                        checked={editForm.es_aprobador}
+                                        onChange={(e) => setEditForm({...editForm, es_aprobador: e.target.checked})}
+                                        style={{ width: '16px', height: '16px' }}
+                                    />
+                                    <ShieldCheck size={16} color="#10b981" /> Permiso para Aprobar
+                                </label>
+                            </div>
+
+                            {editForm.es_aprobador && (
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600' }}>Responsabilidades (Aprobador de:)</label>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '140px', overflowY: 'auto', padding: '8px', border: '1px solid var(--border)', borderRadius: '8px' }}>
+                                        {programasProyectos.map(p => {
+                                            const isChecked = editForm.responsabilidades.includes(String(p.id));
+                                            return (
+                                                <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={isChecked}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setEditForm({...editForm, responsabilidades: [...editForm.responsabilidades, String(p.id)]});
+                                                            } else {
+                                                                setEditForm({...editForm, responsabilidades: editForm.responsabilidades.filter(id => id !== String(p.id))});
+                                                            }
+                                                        }}
+                                                    />
+                                                    <span style={{ fontWeight: 600, color: 'var(--muted-foreground)' }}>[{p.tipo}]</span> {p.nombre}
+                                                </label>
+                                            )
+                                        })}
+                                        {programasProyectos.length === 0 && (
+                                            <div style={{ fontSize: '12px', color: 'var(--muted-foreground)', fontStyle: 'italic' }}>No hay estructuras creadas en el Maestro.</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                             
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>Rol</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', marginTop: '16px' }}>Rol del Sistema</label>
                             <select 
                                 value={editForm.role}
                                 onChange={(e) => setEditForm({...editForm, role: e.target.value})}
@@ -546,7 +657,7 @@ export default function AdministracionPage() {
                                 <option value="Solicitante">Solicitante</option>
                             </select>
 
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}><Wallet size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}/> Centro de Costos</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}><Wallet size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}/> Centro de Costos por Defecto</label>
                             <select 
                                 value={editForm.centro_costos_id || ""}
                                 onChange={(e) => setEditForm({...editForm, centro_costos_id: e.target.value})}
@@ -558,7 +669,7 @@ export default function AdministracionPage() {
                                 ))}
                             </select>
 
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}><FolderKanban size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}/> Programa/Proyecto</label>
+                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}><FolderKanban size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}/> Programa/Proyecto Principal</label>
                             <select 
                                 value={editForm.programa}
                                 onChange={(e) => setEditForm({...editForm, programa: e.target.value})}
@@ -578,11 +689,11 @@ export default function AdministracionPage() {
                                 value={editForm.region}
                                 onChange={(e) => setEditForm({...editForm, region: e.target.value})}
                                 placeholder="Ej: Bogotá, Antioquia..."
-                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '24px', backgroundColor: 'var(--background)', color: 'var(--foreground)', borderColor: (editForm.programa === 'PAS' && !editForm.region) ? 'red' : 'var(--border)' }}
+                                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', marginBottom: '8px', backgroundColor: 'var(--background)', color: 'var(--foreground)', borderColor: (editForm.programa === 'PAS' && !editForm.region) ? 'red' : 'var(--border)' }}
                             />
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
                             <button 
                                 onClick={() => setEditingUser(null)}
                                 style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontWeight: '500', color: 'var(--foreground)' }}
