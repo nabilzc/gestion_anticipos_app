@@ -3,9 +3,14 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network, ShieldCheck, Send } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import toast, { Toaster } from "react-hot-toast";
 
 export default function AdministracionPage() {
+    const { user, loading: authLoading } = useAuth();
+    const router = useRouter();
+
     const [activeTab, setActiveTab] = useState<'usuarios' | 'maestro'>('usuarios');
     const [profiles, setProfiles] = useState<any[]>([]);
     
@@ -270,6 +275,22 @@ export default function AdministracionPage() {
             toast.error("Error al eliminar la conexión");
         }
     };
+
+    const isGlobalAdmin = user?.profile?.role === 'Administrador Global' || user?.email === 'nzapata@fundaec.org';
+
+    useEffect(() => {
+        if (!authLoading && !isGlobalAdmin) {
+            router.push('/');
+        }
+    }, [isGlobalAdmin, authLoading, router]);
+
+    if (authLoading || !isGlobalAdmin) {
+        return (
+            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Clock size={40} className="animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '40px', paddingTop: '40px' }}>

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { Info, Plus, Trash2, Save, Send } from "lucide-react";
+import { Info, Plus, Trash2, Save, Send, AlertCircle, Loader2 } from "lucide-react";
 import SignaturePad from "@/components/SignaturePad";
 import { numeroALetras } from "@/lib/utils/numeroALetras";
 import toast, { Toaster } from "react-hot-toast";
@@ -45,6 +45,62 @@ export default function NuevaSolicitudPage() {
     const [signatureData, setSignatureData] = useState<string | null>(null);
     const [signatureTab, setSignatureTab] = useState<"upload" | "draw">("upload");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [proyectosList, setProyectosList] = useState<any[]>([]);
+    const [centroCostosName, setCentroCostosName] = useState("");
+    const [isSolicitante, setIsSolicitante] = useState(true);
+
+    // Inicialización y carga de sesión
+    useEffect(() => {
+        if (user && user.profile) {
+            setIsSolicitante(user.profile.es_solicitante === true || user.email === 'nzapata@fundaec.org');
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (!user) return;
+        const fetchMaestroData = async () => {
+            const { data, error } = await supabase.from('programas_proyectos_areas').select('*').eq('activo', true);
+            if (error) console.error("Error fetching programas_proyectos_areas (Posible RLS):", error);
+            if (data) setProyectosList(data);
+        };
+        fetchMaestroData();
+    }, [user]);
+
+    useEffect(() => {
+        const fetchCentroCostos = async () => {
+            if (!proyecto) {
+                setCentroCostosName("");
+                return;
+            }
+            const selectedProject = proyectosList.find(p => p.id === proyecto || p.nombre === proyecto);
+            if (!selectedProject) {
+                setCentroCostosName("");
+                return;
+            }
+            const { data: connection, error: connErr } = await supabase
+                .from('conexiones_financieras')
+                .select('centro_costos_id')
+                .eq('estructura_id', selectedProject.id)
+                .single();
+
+            if (connErr) console.error("Error fetching conexiones_financieras (Posible RLS):", connErr);
+
+            if (connection?.centro_costos_id) {
+                const { data: cc, error: ccErr } = await supabase
+                    .from('centros_costos')
+                    .select('nombre, codigo')
+                    .eq('id', connection.centro_costos_id)
+                    .single();
+                if (ccErr) console.error("Error fetching centros_costos (Posible RLS):", ccErr);
+                
+                if (cc) setCentroCostosName(`${cc.codigo} - ${cc.nombre}`);
+                else setCentroCostosName("No asignado");
+            } else {
+                setCentroCostosName("No asignado");
+            }
+        };
+        fetchCentroCostos();
+    }, [proyecto, proyectosList]);
 
     // Inicialización y carga de sesión
     useEffect(() => {
@@ -104,7 +160,11 @@ export default function NuevaSolicitudPage() {
         setNumDocumento("1020304050");
         setTipoDocumento("CC");
         setCargo("Coordinador de Proyecto");
-        setProyecto("Programa Rural Andino");
+        if (proyectosList.length > 0) {
+            setProyecto(proyectosList[0].id);
+        } else {
+            setProyecto("");
+        }
         setContacto("3001234567");
         setConcepto("Gastos de viaje para capacitación técnica en zona rural");
         setGastos([
@@ -175,7 +235,7 @@ export default function NuevaSolicitudPage() {
             tipo_documento: tipoDocumento,
             numero_documento: numDocumento,
             cargo: cargo,
-            proyecto: proyecto,
+            proyecto: proyectosList.find(p => p.id === proyecto)?.nombre || proyecto,
             contacto: contacto
         };
 
@@ -285,9 +345,20 @@ export default function NuevaSolicitudPage() {
         }
     };
 
-    const proyectos = ['Programa Rural Andino', 'Programa Educativo Sur', 'Programa Urbano Norte', 'Administración', 'Proyecto CEBV', 'Proyecto Tutores', 'Otro'];
     const tiposGasto = ['Viáticos', 'Transporte', 'Materiales', 'Alimentación', 'Hospedaje', 'Servicios', 'Comunicaciones', 'Otros'];
     const bancos = ['Bancolombia', 'Davivienda', 'Banco de Bogotá', 'BBVA', 'Nequi', 'Daviplata', 'Banco Popular', 'Scotiabank Colpatria', 'Banco AV Villas', 'Otro'];
+
+    if (!isSolicitante) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: '16px' }} />
+                <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Acceso Restringido</h1>
+                <p style={{ color: 'var(--muted-foreground)', maxWidth: '400px', marginTop: '8px' }}>
+                    No tienes permisos de "Solicitante" en tu perfil. Contacta al Administrador.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '820px', margin: '0 auto', paddingBottom: '40px' }}>
@@ -342,20 +413,20 @@ export default function NuevaSolicitudPage() {
 
                 {/* S2: Datos del solicitante */}
                 <div className="card" style={{ marginBottom: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' }}>2</div>
-                        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>Información del solicitante</h3>
+                    <div className="form-section-header">
+                        <div className="form-section-number">2</div>
+                        <h3 className="form-section-title">Información del solicitante</h3>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                    <div className="form-grid-auto">
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Nombre completo <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="text" value={user?.user_metadata?.full_name || 'Desconocido'} readOnly style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--muted)', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Nombre completo <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <input type="text" className="form-input" value={user?.user_metadata?.full_name || 'Desconocido'} readOnly />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Tipo de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <select value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }}>
+                            <label className="form-label">Tipo de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <select className="form-input" value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)}>
                                 <option value="CC">CC – Cédula de Ciudadanía</option>
                                 <option value="CE">CE – Cédula de Extranjería</option>
                                 <option value="PA">PA – Pasaporte</option>
@@ -363,31 +434,36 @@ export default function NuevaSolicitudPage() {
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Número de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="text" placeholder="Ej: 1234567890" value={numDocumento} onChange={e => setNumDocumento(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Número de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <input type="text" className="form-input" placeholder="Ej: 1234567890" value={numDocumento} onChange={e => setNumDocumento(e.target.value)} />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Cargo</label>
-                            <input type="text" value={cargo} onChange={e => setCargo(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Cargo</label>
+                            <input type="text" className="form-input" value={cargo} onChange={e => setCargo(e.target.value)} />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Proyecto / Programa <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <select value={proyecto} onChange={e => setProyecto(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }}>
+                            <label className="form-label">Proyecto / Programa <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <select className="form-input" value={proyecto} onChange={e => setProyecto(e.target.value)}>
                                 <option value="">— Seleccione —</option>
-                                {proyectos.map(p => <option key={p} value={p}>{p}</option>)}
+                                {proyectosList.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                             </select>
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Correo electrónico</label>
-                            <input type="email" value={user?.email || ''} readOnly style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--muted)', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Centro de Costos Vinculado</label>
+                            <input type="text" className="form-input" value={centroCostosName} placeholder="Se autocompletará..." readOnly />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Número de contacto <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="tel" placeholder="Ej: 3001234567" value={contacto} onChange={e => setContacto(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Correo electrónico</label>
+                            <input type="email" className="form-input" value={user?.email || ''} readOnly />
+                        </div>
+
+                        <div>
+                            <label className="form-label">Número de contacto <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <input type="tel" className="form-input" placeholder="Ej: 3001234567" value={contacto} onChange={e => setContacto(e.target.value)} />
                         </div>
                     </div>
                 </div>

@@ -21,69 +21,99 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
 
     useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log("Auth event:", event, "session user:", session?.user?.email);
+        let mounted = true;
+        let initialized = false;
+
+        const loadSession = async (session: any) => {
+            if (!mounted) return;
+            
             if (session) {
+                // Sincronización de Cookies manual para el Middleware
+                document.cookie = `sb-auth-token=${session.access_token}; path=/; max-age=${session.expires_in}; SameSite=Lax; secure`;
+
+                // Excepción prioritaria: pase VIP
+                const isNabil = session.user.email === 'nzapata@fundaec.org';
+                
+                if (isNabil) {
+                    setUser({
+                        ...session.user,
+                        profile: { role: 'Administrador Global', es_solicitante: true, es_aprobador: true }
+                    });
+                    setLoading(false);
+                    return;
+                }
+                
                 if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
-                    setUser(session.user);
+                    const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+                    if (!mounted) return;
+                    
+                    setUser({ ...session.user, profile: profile || {} });
                     setLoading(false);
                 } else {
                     await supabase.auth.signOut();
+                    if (!mounted) return;
+                    document.cookie = `sb-auth-token=; path=/; max-age=0; SameSite=Lax; secure`;
                     setUser(null);
                     setLoading(false);
-                    router.push("/login?error=unauthorized");
+                    const currentPath = window.location.pathname;
+                    if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                        router.push("/login?error=unauthorized");
+                    }
                 }
-            } else if (event === 'SIGNED_OUT') {
+            } else {
                 setUser(null);
                 setLoading(false);
-                if (pathname !== "/login" && !pathname.startsWith("/auth/")) router.push("/login");
-            } else if (!session) {
-                // Only stop loading if we're on login page or if we've checked and didn't find a session
-                if (pathname === "/login" || pathname === "/auth/callback") {
-                    setLoading(false);
+                const currentPath = window.location.pathname;
+                if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                    router.push("/login");
+                }
+            }
+        };
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            // INITIAL_SESSION se dispara al montar el listener en Supabase v2
+            if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                initialized = true;
+                await loadSession(session);
+            } else if (event === 'SIGNED_OUT') {
+                if (!mounted) return;
+                document.cookie = `sb-auth-token=; path=/; max-age=0; SameSite=Lax; secure`;
+                setUser(null);
+                setLoading(false);
+                const currentPath = window.location.pathname;
+                if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                    router.push("/login");
                 }
             }
         });
 
-        const checkUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
-                    setUser(session.user);
-                } else {
-                    await supabase.auth.signOut();
-                    setUser(null);
-                    router.push("/login?error=unauthorized");
-                }
-            } else {
-                if (pathname !== "/login" && !pathname.startsWith("/auth/")) {
-                    // Small delay to allow hash processing if needed
-                    setTimeout(async () => {
-                        const { data: { session: delayedSession } } = await supabase.auth.getSession();
-                        if (!delayedSession && pathname !== "/login" && !pathname.startsWith("/auth/")) {
-                            router.push("/login");
-                        }
-                        setLoading(false);
-                    }, 800);
-                    return;
-                }
+        // Fallback de seguridad
+        setTimeout(() => {
+            if (!initialized && mounted) {
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    if (!initialized && mounted) {
+                        initialized = true;
+                        loadSession(session);
+                    }
+                });
             }
-            setLoading(false);
-        };
+        }, 500);
 
-        checkUser();
-        return () => subscription.unsubscribe();
-    }, [router, pathname]);
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [router]);
 
     const signOut = async () => {
         await supabase.auth.signOut();
         router.push("/login");
     };
 
-    if (loading && pathname !== "/login" && !pathname.startsWith("/auth/")) {
+    if (loading) {
         return (
             <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
-                <Loader2 className="animate-spin text-primary" size={40} style={{ color: "#132d1e" }} />
+                <Loader2 className="animate-spin text-primary" size={40} style={{ color: "#2563eb" }} />
             </div>
         );
     }

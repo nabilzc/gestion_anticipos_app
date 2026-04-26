@@ -25,6 +25,9 @@ interface SidebarProps {
       avatar_url?: string;
     };
     email?: string;
+    profile?: {
+      role?: string;
+    };
   };
   onLogout?: () => void;
 }
@@ -40,8 +43,11 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
     { name: 'Desembolsos', href: '/desembolsos', icon: ArrowLeftRight },
     { name: 'Reportes', href: '/reportes', icon: BarChart3 },
     { name: 'Legalizaciones', href: '/legalizaciones', icon: Receipt },
-    { name: 'Administración', href: '/administracion', icon: Settings2 },
   ];
+
+  if (user?.profile?.role === 'Administrador Global' || user?.email === 'nzapata@fundaec.org') {
+      menuItems.push({ name: 'Administración', href: '/administracion', icon: Settings2 });
+  }
 
   const isActive = (href: string) => {
     if (href === '/' && pathname === '/') return true;
@@ -102,7 +108,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
         </div>
         <div className={styles.userInfo}>
           <span className={styles.userName}>{user?.user_metadata?.full_name || user?.email || 'Usuario'}</span>
-          <span className={styles.userRole}>{user?.user_metadata?.role || 'Empleado'}</span>
+          <span className={styles.userRole}>{user?.profile?.role || (user?.email === 'nzapata@fundaec.org' ? 'Administrador Global' : user?.user_metadata?.role) || 'Empleado'}</span>
         </div>
         <button
           className={styles.logoutBtn}
