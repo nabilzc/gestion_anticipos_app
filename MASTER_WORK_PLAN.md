@@ -3,7 +3,7 @@
 ## SECCIÓN 1: ESTADO DEL PROYECTO
 - **Porcentaje de completitud general:** ~85% (Módulos core de solicitud, aprobación, desembolso y administración completados).
 - **Fase actual vs fases siguientes:** 
-  - *Actual:* Estabilización de políticas de seguridad (RLS), refinamiento del panel de administración y desarrollo activo del módulo de legalizaciones.
+  - *Actual:* El enfoque actual vuelve a ser la carga y validación de los soportes de legalización.
   - *Siguiente:* Finalización del flujo de legalización y conciliación financiera.
 - **Bugs críticos/conocidos:** 
   - Posibles advertencias de fetch (RLS) en consultas a tablas maestras (`programas_proyectos_areas`, `conexiones_financieras`).
@@ -180,6 +180,13 @@ if (!isSolicitante) {
 ---
 
 ## SECCIÓN 12: HISTORIAL DE CAMBIOS (CHANGELOG)
+- **2026-04-27** - Simplificación de descarga de la cuenta de cobro a formato estático para priorizar estabilidad.
+- **2026-04-27** - Depuración profunda de sintaxis XML en Word.
+- **2026-04-27** - Generación dinámica de Cuenta de Cobro.
+- **2026-04-27** - Lectura de binarios ArrayBuffer para Docx.
+- **2026-04-27** - Automatización de cuenta de cobro mediante plantillas dinámicas docx.
+- **2026-04-27** - Implementación de selector de formatos Excel y descarga de cuenta de cobro Word.
+- **2026-04-27** - Inicio del flujo de legalización con plantillas dinámicas (Selector de formatos Excel/CSV, descargas dinámicas y carga de soportes).
 - **2026-04-26** - Middleware Bucle Fix: Relajación de Next.js middleware y cookie sync en AuthContext.
 - **2026-04-26** - Estabilización de sesión (F5), creación de middleware y conexión de formulario de solicitud.
 - **2026-04-24** - Configuración Panel de Administración, RLS global, y selectores dinámicos vinculados a cuentas de costos.

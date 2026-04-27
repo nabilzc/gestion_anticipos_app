@@ -24,9 +24,9 @@ import toast, { Toaster } from "react-hot-toast";
 import { formatCurrency, formatDate } from "@/lib/utils/businessLogic";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, AlignmentType, WidthType, BorderStyle, ImageRun } from "docx";
 import { saveAs } from "file-saver";
 import { sendLegalizationFinanceNotification } from "@/app/actions/sendEmail";
+import { numeroALetras } from "@/lib/utils/numeroALetras";
 
 interface SupportFile {
     file: File;
@@ -47,6 +47,9 @@ export default function LegalizacionPage() {
     const [supports, setSupports] = useState<SupportFile[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const pdfInputRef = useRef<HTMLInputElement>(null);
+    const excelInputRef = useRef<HTMLInputElement>(null);
+    const [selectedTemplate, setSelectedTemplate] = useState("FORMATO_GASTOS_GENERAL");
+    const [uploadedExcel, setUploadedExcel] = useState<File | null>(null);
 
     useEffect(() => {
         async function fetchAnticipo() {
@@ -88,6 +91,35 @@ export default function LegalizacionPage() {
             isUploading: false
         }));
         setSupports([...supports, ...newSupports]);
+    };
+
+    const handleExcelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        if (file.name.endsWith('.xlsx') || file.name.endsWith('.csv') || file.type.includes('excel') || file.type.includes('spreadsheetml')) {
+            setUploadedExcel(file);
+            
+            // Lógica de Carga y Lectura usando xlsx
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const bstr = evt.target?.result;
+                    const wb = XLSX.read(bstr, { type: 'binary' });
+                    const wsname = wb.SheetNames[0];
+                    const ws = wb.Sheets[wsname];
+                    const data = XLSX.utils.sheet_to_json(ws);
+                    console.log(`Excel procesado, ${data.length} filas encontradas para ID_Anticipo: ${id}`);
+                    toast.success(`Excel cargado y analizado correctamente (${data.length} registros)`);
+                } catch (err) {
+                    console.error("Error procesando excel:", err);
+                    toast.success("Excel cargado correctamente (sin pre-análisis)");
+                }
+            };
+            reader.readAsBinaryString(file);
+        } else {
+            toast.error("Por favor sube un archivo Excel o CSV válido");
+        }
     };
 
     const handleCuentaCobroSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -136,182 +168,17 @@ export default function LegalizacionPage() {
     };
 
     const downloadExcelTemplate = () => {
-        if (!anticipo) return;
-
-        const data = [
-            ["RELACIÓN DE GASTOS - ANTICIPO #" + id],
-            ["Solicitante", anticipo.profiles?.full_name || user?.email],
-            ["Fecha Anticipo", formatDate(anticipo.created_at)],
-            ["Monto Recibido", anticipo.monto_total],
-            [""],
-            ["FECHA", "PROVEEDOR / CONCEPTO", "TIPO GASTO", "VALOR", "OBSERVACIONES"]
-            // El empleado llenará esto
-        ];
-
-        const ws = XLSX.utils.aoa_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Legalización");
-        
-        XLSX.writeFile(wb, `Relacion_Gastos_ANT_${id}.xlsx`);
-        toast.success("Formato Excel descargado");
+        const fileUrl = `/formatos/${selectedTemplate}.xlsx`;
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = `${selectedTemplate}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success(`Formato Excel descargado`);
     };
 
-    const generateCuentaCobro = async () => {
-        // Cargar el logo
-        let logoData;
-        try {
-            const response = await fetch('/logo-fundaec.png');
-            logoData = await response.arrayBuffer();
-        } catch (err) {
-            console.error("Error al cargar el logo para el documento:", err);
-            toast.error("No se pudo cargar el logotipo institucional");
-        }
 
-        const doc = new Document({
-            sections: [{
-                properties: {},
-                children: [
-                    // Encabezado con lögotipo y datos a la derecha
-                    new Paragraph({
-                        alignment: AlignmentType.RIGHT,
-                        children: [
-                            ...(logoData ? [
-                                new ImageRun({
-                                    data: logoData,
-                                    transformation: {
-                                        width: 120, // Ajuste para un tamaño discreto
-                                        height: 45,
-                                    },
-                                })
-                            ] : []),
-                        ],
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Nombre: _____________________", bold: true, size: 20 }),
-                        ],
-                        spacing: { before: logoData ? 200 : 0 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Dirección: _____________________", bold: true, size: 20 }),
-                        ],
-                    }),
-                    new Paragraph({
-                        alignment: AlignmentType.RIGHT,
-                        children: [
-                            new TextRun({ text: `Ciudad y fecha: Cali, ${new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}`, italics: true, size: 20 }),
-                        ],
-                        spacing: { before: 400, after: 400 },
-                    }),
-                    new Paragraph({
-                        alignment: AlignmentType.CENTER,
-                        children: [
-                            new TextRun({ text: "FUNDACION PARA LA APLICACIÓN Y ENSEÑANZA DE LA CIENCIA", bold: true, size: 26 }),
-                        ],
-                    }),
-                    new Paragraph({
-                        alignment: AlignmentType.CENTER,
-                        children: [
-                            new TextRun({ text: "(FUNDAEC)", bold: true, size: 26 }),
-                        ],
-                    }),
-                    new Paragraph({
-                        alignment: AlignmentType.CENTER,
-                        children: [
-                            new TextRun({ text: "NIT: 890309449", bold: true, size: 22 }),
-                        ],
-                        spacing: { after: 600 },
-                    }),
-                    new Paragraph({
-                        alignment: AlignmentType.CENTER,
-                        children: [
-                            new TextRun({ text: "DEBE A: ________________________________________________", bold: true, size: 22 }),
-                        ],
-                    }),
-                    new Paragraph({
-                        alignment: AlignmentType.CENTER,
-                        children: [
-                            new TextRun({ text: "C.C. ________________________", bold: true, size: 22 }),
-                        ],
-                        spacing: { after: 600 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "La suma de: ________________________________________________ pesos M/C ($__________________)", size: 22 }),
-                        ],
-                        spacing: { after: 200 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Por concepto de: ________________________________________________", size: 22 }),
-                        ],
-                        spacing: { after: 600 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Se firma en el municipio de ____________________, a los ____ días del mes de ___________ del ________", size: 22 }),
-                        ],
-                        spacing: { after: 600 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Información para el pago:", bold: true, size: 22 }),
-                        ],
-                        spacing: { after: 200 },
-                    }),
-                    new Table({
-                        width: { size: 100, type: WidthType.PERCENTAGE },
-                        rows: [
-                            new TableRow({
-                                children: [
-                                    new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Entidad bancaria", size: 20 })] })], width: { size: 40, type: WidthType.PERCENTAGE } }),
-                                    new TableCell({ children: [new Paragraph("")], width: { size: 60, type: WidthType.PERCENTAGE } }),
-                                ],
-                            }),
-                            new TableRow({
-                                children: [
-                                    new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Tipo de cuenta", size: 20 })] })], width: { size: 40, type: WidthType.PERCENTAGE } }),
-                                    new TableCell({ children: [new Paragraph("")], width: { size: 60, type: WidthType.PERCENTAGE } }),
-                                ],
-                            }),
-                            new TableRow({
-                                children: [
-                                    new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Número de cuenta", size: 20 })] })], width: { size: 40, type: WidthType.PERCENTAGE } }),
-                                    new TableCell({ children: [new Paragraph("")], width: { size: 60, type: WidthType.PERCENTAGE } }),
-                                ],
-                            }),
-                        ],
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "____________________________________", bold: true, size: 22 }),
-                        ],
-                        spacing: { before: 1200 },
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Firma de la persona que solicita", size: 22 }),
-                        ],
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "Nombre y apellido:", size: 22 }),
-                        ],
-                    }),
-                    new Paragraph({
-                        children: [
-                            new TextRun({ text: "C.C.", size: 22 }),
-                        ],
-                    }),
-                ],
-            }],
-        });
-
-        const blob = await Packer.toBlob(doc);
-        saveAs(blob, `Cuenta_Cobro_FUNDAEC_ANT_${id}.docx`);
-        toast.success("Documento generado con logotipo oficial");
-    };
 
     const handleFinalSubmit = async () => {
         if (supports.length === 0) {
@@ -325,6 +192,19 @@ export default function LegalizacionPage() {
         try {
             // 1. Subir todos los archivos a Storage
             const uploadedUrls = [];
+            
+            if (uploadedExcel) {
+                const fileName = `${Date.now()}_Excel_${uploadedExcel.name.replace(/\s/g, '_')}`;
+                const filePath = `${id}/${fileName}`;
+                await supabase.storage.from('legalizaciones').upload(filePath, uploadedExcel);
+                const { data: { publicUrl } } = supabase.storage.from('legalizaciones').getPublicUrl(filePath);
+                uploadedUrls.push({
+                    url: publicUrl,
+                    description: 'Excel Relación de Gastos',
+                    type: uploadedExcel.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+            }
+
             for (let i = 0; i < supports.length; i++) {
                 const url = await uploadToSupabase(supports[i]);
                 uploadedUrls.push({
@@ -406,26 +286,58 @@ export default function LegalizacionPage() {
                 style={{ display: 'none' }}
             />
 
+            {/* Input oculto para Excel */}
+            <input 
+                ref={excelInputRef}
+                type="file" 
+                accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                onChange={handleExcelSelect}
+                style={{ display: 'none' }}
+            />
+
             {/* 1. Gestión de Documentos Especiales */}
             <div style={{ padding: '0 20px', marginBottom: '32px' }}>
                 <h2 style={{ fontSize: '14px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '16px' }}>1. Gestión de Documentos Especiales</h2>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', marginBottom: '4px' }}>RELACIÓN DE GASTOS</span>
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b' }}>RELACIÓN DE GASTOS</span>
+                                {uploadedExcel && (
+                                    <CheckCircle2 size={14} color="#16a34a" />
+                                )}
+                            </div>
+                        </div>
+                        <select
+                            value={selectedTemplate}
+                            onChange={(e) => setSelectedTemplate(e.target.value)}
+                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', background: '#fff' }}
+                        >
+                            <option value="FORMATO_GASTOS_GENERAL">Gastos Generales</option>
+                            <option value="FORMATO_GASTOS_PAS">Gastos PAS</option>
+                            <option value="FORMATO_GASTOS_TARJETAS">Gastos Tarjetas</option>
+                        </select>
                         <button 
                             onClick={downloadExcelTemplate}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                            className="primary-button"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px' }}
                         >
-                            <Download size={16} /> Descargar
+                            <Download size={16} /> Descargar Plantilla
                         </button>
                         <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', background: '#fff', color: '#16a34a', border: '1px solid #16a34a', borderRadius: '10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                            onClick={() => excelInputRef.current?.click()}
+                            className="secondary-button"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px' }}
                         >
-                            <Upload size={16} /> Cargar
+                            <Upload size={16} /> {uploadedExcel ? "Cambiar Excel" : "Cargar Excel"}
                         </button>
+                        {uploadedExcel && (
+                            <div style={{ fontSize: '11px', color: '#16a34a', textAlign: 'center', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {uploadedExcel.name}
+                            </div>
+                        )}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+                    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b' }}>CUENTA DE COBRO</span>
@@ -435,15 +347,18 @@ export default function LegalizacionPage() {
                             </div>
                             <div style={{ padding: '2px 6px', background: '#dcfce7', color: '#166534', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>SOLO PDF</div>
                         </div>
-                        <button 
-                            onClick={generateCuentaCobro}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                        <a 
+                            href="/formatos/MODELO_CUENTA_DE_COBRO.docx"
+                            download="MODELO_CUENTA_DE_COBRO.docx"
+                            className="primary-button"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px', textDecoration: 'none' }}
                         >
                             <FileText size={16} /> Descargar modelo
-                        </button>
+                        </a>
                         <button 
                             onClick={() => pdfInputRef.current?.click()}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', background: '#fff', color: '#2563eb', border: '1px solid #2563eb', borderRadius: '10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}
+                            className="secondary-button"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px' }}
                         >
                             <Upload size={16} /> Cargar PDF
                         </button>
