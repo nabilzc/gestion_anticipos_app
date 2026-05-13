@@ -50,6 +50,8 @@ export default function LegalizacionPage() {
     const excelInputRef = useRef<HTMLInputElement>(null);
     const [selectedTemplate, setSelectedTemplate] = useState("FORMATO_GASTOS_GENERAL");
     const [uploadedExcel, setUploadedExcel] = useState<File | null>(null);
+    const [uploadedCuentaCobro, setUploadedCuentaCobro] = useState<File | null>(null);
+    const [totalLegalizado, setTotalLegalizado] = useState<number | null>(null);
 
     useEffect(() => {
         async function fetchAnticipo() {
@@ -91,6 +93,7 @@ export default function LegalizacionPage() {
             isUploading: false
         }));
         setSupports([...supports, ...newSupports]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleExcelSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,9 +111,42 @@ export default function LegalizacionPage() {
                     const wb = XLSX.read(bstr, { type: 'binary' });
                     const wsname = wb.SheetNames[0];
                     const ws = wb.Sheets[wsname];
-                    const data = XLSX.utils.sheet_to_json(ws);
+                    const data: any[] = XLSX.utils.sheet_to_json(ws);
+                    
+                    let extractedTotal = 0;
+                    
+                    // Buscar heurísticamente el total
+                    const keys = data.length > 0 ? Object.keys(data[0]) : [];
+                    const amountKey = keys.find(k => k.toLowerCase().includes('valor') || k.toLowerCase().includes('monto') || k.toLowerCase().includes('total'));
+                    
+                    if (amountKey) {
+                        extractedTotal = data.reduce((sum, row) => sum + (Number(row[amountKey]) || 0), 0);
+                    } else {
+                        // Si no hay key estándar, buscaremos "total" en el sheet crudo
+                        for (const cell in ws) {
+                            if(cell[0] === '!') continue;
+                            const val = String(ws[cell].v).toLowerCase();
+                            if(val.includes('total') || val.includes('gran total')) {
+                                const rowNum = cell.replace(/[a-zA-Z]/g, '');
+                                for(let col = 0; col < 15; col++) {
+                                    const colChar = String.fromCharCode(65 + col);
+                                    const testCell = ws[colChar + rowNum];
+                                    if (testCell && typeof testCell.v === 'number') {
+                                        extractedTotal = Math.max(extractedTotal, testCell.v);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (extractedTotal > 0) {
+                        setTotalLegalizado(extractedTotal);
+                        toast.success(`Excel analizado: ${data.length} registros. Total detectado: ${formatCurrency(extractedTotal)}`);
+                    } else {
+                        toast.success(`Excel cargado (${data.length} registros). No se pudo auto-detectar el total.`);
+                    }
+
                     console.log(`Excel procesado, ${data.length} filas encontradas para ID_Anticipo: ${id}`);
-                    toast.success(`Excel cargado y analizado correctamente (${data.length} registros)`);
                 } catch (err) {
                     console.error("Error procesando excel:", err);
                     toast.success("Excel cargado correctamente (sin pre-análisis)");
@@ -125,16 +161,19 @@ export default function LegalizacionPage() {
     const handleCuentaCobroSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
-        const newSupport: SupportFile = {
-            file,
-            preview: '',
-            type: file.type,
-            description: 'Cuenta de Cobro Firmada',
-            isUploading: false
-        };
-        setSupports([...supports, newSupport]);
-        toast.success("Cuenta de Cobro vinculada correctamente");
+        setUploadedCuentaCobro(file);
+        toast.success("Cuenta de Cobro seleccionada");
+    };
+
+    const removeExcel = () => {
+        setUploadedExcel(null);
+        setTotalLegalizado(null);
+        if (excelInputRef.current) excelInputRef.current.value = '';
+    };
+
+    const removeCuentaCobro = () => {
+        setUploadedCuentaCobro(null);
+        if (pdfInputRef.current) pdfInputRef.current.value = '';
     };
 
     const removeSupport = (index: number) => {
@@ -151,7 +190,12 @@ export default function LegalizacionPage() {
     };
 
     const uploadToSupabase = async (support: SupportFile): Promise<string> => {
-        const fileName = `${Date.now()}_${support.file.name.replace(/\s/g, '_')}`;
+        if (!support.file || support.file.size === 0) {
+            throw new Error(`El archivo ${support.file.name || 'desconocido'} está vacío o es inválido.`);
+        }
+        
+        const safeName = support.file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const fileName = `${Date.now()}_${safeName}`;
         const filePath = `${id}/${fileName}`;
         
         const { data, error } = await supabase.storage
@@ -194,14 +238,32 @@ export default function LegalizacionPage() {
             const uploadedUrls = [];
             
             if (uploadedExcel) {
-                const fileName = `${Date.now()}_Excel_${uploadedExcel.name.replace(/\s/g, '_')}`;
+                if (uploadedExcel.size === 0) throw new Error("El archivo Excel está vacío.");
+                const safeName = uploadedExcel.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+                const fileName = `${Date.now()}_Excel_${safeName}`;
                 const filePath = `${id}/${fileName}`;
-                await supabase.storage.from('legalizaciones').upload(filePath, uploadedExcel);
+                const { error: excelError } = await supabase.storage.from('legalizaciones').upload(filePath, uploadedExcel, { upsert: false });
+                if (excelError) throw excelError;
                 const { data: { publicUrl } } = supabase.storage.from('legalizaciones').getPublicUrl(filePath);
                 uploadedUrls.push({
                     url: publicUrl,
                     description: 'Excel Relación de Gastos',
                     type: uploadedExcel.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+            }
+
+            if (uploadedCuentaCobro) {
+                if (uploadedCuentaCobro.size === 0) throw new Error("La Cuenta de Cobro está vacía.");
+                const safeName = uploadedCuentaCobro.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+                const fileName = `${Date.now()}_CuentaCobro_${safeName}`;
+                const filePath = `${id}/${fileName}`;
+                const { error: ccError } = await supabase.storage.from('legalizaciones').upload(filePath, uploadedCuentaCobro, { upsert: false });
+                if (ccError) throw ccError;
+                const { data: { publicUrl } } = supabase.storage.from('legalizaciones').getPublicUrl(filePath);
+                uploadedUrls.push({
+                    url: publicUrl,
+                    description: 'Cuenta de Cobro Firmada',
+                    type: uploadedCuentaCobro.type || 'application/pdf'
                 });
             }
 
@@ -238,8 +300,9 @@ export default function LegalizacionPage() {
             toast.success("¡Legalización enviada exitosamente! 🎉", { id: loadingToast });
             router.push("/mis-anticipos");
         } catch (err: any) {
-            console.error(err);
-            toast.error(`Error: ${err.message}`, { id: loadingToast });
+            console.error("Error detallado de Supabase:", err);
+            const errMsg = err?.message || err?.error_description || (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            toast.error(`Error: ${errMsg}`, { id: loadingToast });
         } finally {
             setIsSubmitting(false);
         }
@@ -271,17 +334,17 @@ export default function LegalizacionPage() {
                 ref={fileInputRef}
                 type="file" 
                 multiple 
-                accept="image/*,application/pdf,.xlsx,.xls"
+                accept="image/*,application/pdf"
                 onChange={handleFileSelect}
                 style={{ display: 'none' }}
                 capture="environment"
             />
 
-            {/* Input oculto para Cuenta de Cobro (Solo PDF) */}
+            {/* Input oculto para Cuenta de Cobro (PDF/Word) */}
             <input 
                 ref={pdfInputRef}
                 type="file" 
-                accept="application/pdf"
+                accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx"
                 onChange={handleCuentaCobroSelect}
                 style={{ display: 'none' }}
             />
@@ -324,28 +387,35 @@ export default function LegalizacionPage() {
                         >
                             <Download size={16} /> Descargar Plantilla
                         </button>
-                        <button 
-                            onClick={() => excelInputRef.current?.click()}
-                            className="secondary-button"
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px' }}
-                        >
-                            <Upload size={16} /> {uploadedExcel ? "Cambiar Excel" : "Cargar Excel"}
-                        </button>
-                        {uploadedExcel && (
-                            <div style={{ fontSize: '11px', color: '#16a34a', textAlign: 'center', marginTop: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {uploadedExcel.name}
+                        {uploadedExcel ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '4px' }}>
+                                <div style={{ overflow: 'hidden' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{uploadedExcel.name}</div>
+                                    <div style={{ fontSize: '10px', color: '#64748b' }}>{(uploadedExcel.size / 1024 / 1024).toFixed(2)} MB</div>
+                                </div>
+                                <button onClick={removeExcel} style={{ background: 'none', border: 'none', color: '#ef4444', padding: '4px', cursor: 'pointer' }}>
+                                    <X size={14} />
+                                </button>
                             </div>
+                        ) : (
+                            <button 
+                                onClick={() => excelInputRef.current?.click()}
+                                className="secondary-button"
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px', marginTop: '4px' }}
+                            >
+                                <Upload size={16} /> Cargar Excel
+                            </button>
                         )}
                     </div>
                     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b' }}>CUENTA DE COBRO</span>
-                                {supports.some(s => s.description === 'Cuenta de Cobro Firmada') && (
+                                {uploadedCuentaCobro && (
                                     <CheckCircle2 size={14} color="#16a34a" />
                                 )}
                             </div>
-                            <div style={{ padding: '2px 6px', background: '#dcfce7', color: '#166534', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>SOLO PDF</div>
+                            <div style={{ padding: '2px 6px', background: '#dcfce7', color: '#166534', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>PDF / WORD</div>
                         </div>
                         <a 
                             href="/formatos/MODELO_CUENTA_DE_COBRO.docx"
@@ -355,16 +425,65 @@ export default function LegalizacionPage() {
                         >
                             <FileText size={16} /> Descargar modelo
                         </a>
-                        <button 
-                            onClick={() => pdfInputRef.current?.click()}
-                            className="secondary-button"
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px' }}
-                        >
-                            <Upload size={16} /> Cargar PDF
-                        </button>
+                        {uploadedCuentaCobro ? (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', marginTop: '4px' }}>
+                                <div style={{ overflow: 'hidden' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: '700', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{uploadedCuentaCobro.name}</div>
+                                    <div style={{ fontSize: '10px', color: '#64748b' }}>{(uploadedCuentaCobro.size / 1024 / 1024).toFixed(2)} MB</div>
+                                </div>
+                                <button onClick={removeCuentaCobro} style={{ background: 'none', border: 'none', color: '#ef4444', padding: '4px', cursor: 'pointer' }}>
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <button 
+                                    onClick={() => pdfInputRef.current?.click()}
+                                    className="secondary-button"
+                                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px', marginTop: '4px' }}
+                                >
+                                    <Upload size={16} /> Cargar Archivo
+                                </button>
+                                <span style={{ fontSize: '10px', color: '#64748b', textAlign: 'center', marginTop: '4px', display: 'block' }}>
+                                    Sube tu cuenta de cobro (Formatos aceptados: PDF, Word)
+                                </span>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
+
+            {/* Alertas de Conciliación */}
+            {totalLegalizado !== null && anticipo && (
+                <div style={{ padding: '0 20px', marginBottom: '32px' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '16px', padding: '16px' }}>
+                        <h3 style={{ fontSize: '13px', fontWeight: '800', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <AlertCircle size={16} color="#475569" />
+                            RESUMEN DE CONCILIACIÓN
+                        </h3>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Anticipo Desembolsado:</span>
+                            <span style={{ fontWeight: '600' }}>{formatCurrency(anticipo.monto_total)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '14px' }}>
+                            <span style={{ color: '#64748b' }}>Total Legalizado (Excel):</span>
+                            <span style={{ fontWeight: '600' }}>{formatCurrency(totalLegalizado)}</span>
+                        </div>
+                        <div style={{ height: '1px', background: '#cbd5e1', margin: '8px 0' }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '800', color: '#1e293b' }}>Diferencia:</span>
+                            <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '16px', fontWeight: '800', color: anticipo.monto_total - totalLegalizado > 0 ? '#ea580c' : (anticipo.monto_total - totalLegalizado < 0 ? '#2563eb' : '#16a34a') }}>
+                                    {formatCurrency(Math.abs(anticipo.monto_total - totalLegalizado))}
+                                </div>
+                                <div style={{ fontSize: '11px', fontWeight: '700', color: anticipo.monto_total - totalLegalizado > 0 ? '#ea580c' : (anticipo.monto_total - totalLegalizado < 0 ? '#2563eb' : '#16a34a') }}>
+                                    {anticipo.monto_total - totalLegalizado > 0 ? 'Saldo a favor de FUNDAEC' : (anticipo.monto_total - totalLegalizado < 0 ? 'Saldo a favor del Empleado' : 'Legalización Exacta')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 2. Carga Multimedia */}
             <div style={{ padding: '0 20px', marginBottom: '32px' }}>
@@ -417,8 +536,11 @@ export default function LegalizacionPage() {
                                 </div>
                                 <div style={{ flex: 1 }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.file.name}</div>
-                                        <button onClick={() => removeSupport(idx)} style={{ background: 'none', border: 'none', color: '#ef4444' }}>
+                                        <div>
+                                            <div style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.file.name}</div>
+                                            <div style={{ fontSize: '11px', color: '#64748b' }}>{(s.file.size / 1024 / 1024).toFixed(2)} MB</div>
+                                        </div>
+                                        <button onClick={() => removeSupport(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', padding: '4px', cursor: 'pointer' }}>
                                             <Trash2 size={18} />
                                         </button>
                                     </div>

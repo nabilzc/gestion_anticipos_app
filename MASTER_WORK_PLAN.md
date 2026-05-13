@@ -180,6 +180,12 @@ if (!isSolicitante) {
 ---
 
 ## SECCIÓN 12: HISTORIAL DE CAMBIOS (CHANGELOG)
+- **2026-04-27** - Implementación de la Vista de Revisión de Soportes (Auditoría) en el panel de Administración para revisar legalizaciones, aprobar y rechazar con galería dinámica de facturas.
+- **2026-04-27** - Añadida funcionalidad de eliminación/reemplazo de archivos en el flujo de pre-finalización de legalización.
+- **2026-04-27** - Ajuste de UX: Habilitación de formatos Word (.doc, .docx) para la subida de Cuenta de Cobro.
+- **2026-04-27** - Debugging de handleFinalSubmit y políticas RLS de base de datos en anticipos.
+- **2026-04-27** - Integración estabilizada con Supabase Storage para carga de soportes y validación anti-vacíos.
+- **2026-04-27** - Inicio de procesamiento de conciliación financiera (lectura heurística de Excel y diferencias) y zona de evidencias.
 - **2026-04-27** - Simplificación de descarga de la cuenta de cobro a formato estático para priorizar estabilidad.
 - **2026-04-27** - Depuración profunda de sintaxis XML en Word.
 - **2026-04-27** - Generación dinámica de Cuenta de Cobro.

@@ -89,7 +89,7 @@ export default function AprobacionesPage() {
                 }).catch(err => console.error("Error sending approval email:", err));
             }
 
-            toast.success("¡Solicitud aprobada con éxito! 🎉", { id: loadingToast, icon: '🎉' });
+            toast.success("¡Solicitud aprobada con éxito! ✅", { id: loadingToast, icon: '✅' });
             setIsCelebrating(true);
             setTimeout(() => setIsCelebrating(false), 3000);
             setShowApproveModal(false);
@@ -328,7 +328,7 @@ export default function AprobacionesPage() {
             {/* Celebration Effect Overlay */}
             {isCelebrating && (
                 <div className="celebration-overlay">
-                    <div className="celebration-emoji">🎉</div>
+                    <div className="celebration-emoji">✅</div>
                     {[...Array(40)].map((_, i) => {
                         const angle = Math.random() * Math.PI * 2;
                         const distance = 100 + Math.random() * 200;
@@ -339,7 +339,7 @@ export default function AprobacionesPage() {
                                 style={{ 
                                     '--x': `${Math.cos(angle) * distance}px`, 
                                     '--y': `${Math.sin(angle) * distance}px`,
-                                    backgroundColor: ['#2dd4bf', '#3b82f6', '#f59e0b', '#ef4444', '#10b981', '#a855f7'][Math.floor(Math.random() * 6)],
+                                    backgroundColor: ['#22c55e', '#16a34a', '#15803d', '#4ade80', '#10b981'][Math.floor(Math.random() * 5)],
                                     left: '50%',
                                     top: '50%',
                                     width: `${6 + Math.random() * 8}px`,
