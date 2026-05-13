@@ -43,12 +43,92 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     return;
                 }
                 
-                if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
+                if (session.user.email) {
                     const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
                     if (!mounted) return;
                     
-                    setUser({ ...session.user, profile: profile || {} });
-                    setLoading(false);
+                    if (profile) {
+                        // Sincronizar permisos desde perfiles_autorizados en cada inicio de sesión
+                        const { data: authProfile } = await supabase.from('perfiles_autorizados')
+                            .select('*, programas_proyectos_areas(nombre)')
+                            .eq('email', session.user.email).single();
+
+                        let finalProfile = { ...profile };
+
+                        if (authProfile) {
+                            let calculatedRole = profile.role;
+                            // Respetar la jerarquía de Administrador Global
+                            if (profile.role !== 'Administrador Global') {
+                                if (authProfile.es_administrador) calculatedRole = 'Administrador';
+                                else if (authProfile.es_aprobador) calculatedRole = 'Aprobador';
+                                else if (authProfile.es_solicitante) calculatedRole = 'Solicitante';
+                                else calculatedRole = 'Sin rol';
+                            }
+
+                            finalProfile = {
+                                ...profile,
+                                role: calculatedRole,
+                                programa: authProfile.programas_proyectos_areas?.nombre || profile.programa,
+                                es_solicitante: authProfile.es_solicitante || false,
+                                es_aprobador: authProfile.es_aprobador || false
+                            };
+
+                            // Actualizar la tabla profiles con los nuevos permisos si hubo cambios
+                            if (profile.role !== finalProfile.role || profile.es_solicitante !== finalProfile.es_solicitante || profile.es_aprobador !== finalProfile.es_aprobador || profile.programa !== finalProfile.programa) {
+                                await supabase.from('profiles').update({
+                                    role: finalProfile.role,
+                                    programa: finalProfile.programa,
+                                    es_solicitante: finalProfile.es_solicitante,
+                                    es_aprobador: finalProfile.es_aprobador
+                                }).eq('id', profile.id);
+                            }
+                        }
+                        
+                        setUser({ ...session.user, profile: finalProfile });
+                        setLoading(false);
+                    } else {
+                        // Verificar perfiles autorizados si no tiene perfil (Nuevo usuario)
+                        const { data: authProfile } = await supabase.from('perfiles_autorizados')
+                            .select('*, programas_proyectos_areas(nombre)')
+                            .eq('email', session.user.email).single();
+
+                        if (authProfile) {
+                            let calculatedRole = 'Sin rol';
+                            if (authProfile.es_administrador) calculatedRole = 'Administrador';
+                            else if (authProfile.es_aprobador) calculatedRole = 'Aprobador';
+                            else if (authProfile.es_solicitante) calculatedRole = 'Solicitante';
+
+                            // Excepción: Si por email le corresponde ser Global
+                            if (session.user.email === 'nzapata@fundaec.org') {
+                                calculatedRole = 'Administrador Global';
+                            }
+
+                            const newProfile = {
+                                id: session.user.id,
+                                email: session.user.email,
+                                full_name: authProfile.nombre_completo || session.user.user_metadata?.full_name || '',
+                                role: calculatedRole,
+                                programa: authProfile.programas_proyectos_areas?.nombre || null,
+                                es_solicitante: authProfile.es_solicitante || false,
+                                es_aprobador: authProfile.es_aprobador || false
+                            };
+
+                            const { data: createdProfile } = await supabase.from('profiles').insert([newProfile]).select().single();
+                            
+                            setUser({ ...session.user, profile: createdProfile || newProfile });
+                            setLoading(false);
+                        } else {
+                            await supabase.auth.signOut();
+                            if (!mounted) return;
+                            document.cookie = `sb-auth-token=; path=/; max-age=0; SameSite=Lax; secure`;
+                            setUser(null);
+                            setLoading(false);
+                            const currentPath = window.location.pathname;
+                            if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                                router.push("/login?error=not_authorized");
+                            }
+                        }
+                    }
                 } else {
                     await supabase.auth.signOut();
                     if (!mounted) return;

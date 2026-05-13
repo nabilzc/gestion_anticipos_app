@@ -180,6 +180,14 @@ if (!isSolicitante) {
 ---
 
 ## SECCIÓN 12: HISTORIAL DE CAMBIOS (CHANGELOG)
+- **2026-05-13** - Implementado sistema de asignación jerárquica manual con validación de estructura cruzada (Programa/Área): nueva pestaña 'Asignación de Aprobadores' con filtrado inteligente y pre-selección en Nueva Solicitud. Reordenamiento de pestañas para mejorar flujo administrativo.
+- **2026-05-12** - Limpieza de interfaz: Implementado selector múltiple desplegable (multi-select dropdown) para Estructuras Vinculadas.
+- **2026-05-12** - Habilitada la edición de Estructuras Operativas (Programas/Proyectos/Áreas) en la pestaña de Configuración Maestro.
+- **2026-05-12** - Implementado sistema de protección de jerarquía para el rol de 'Administrador Global'.
+- **2026-05-12** - Corrección de error de parseo (JSX) en la vista de Administración originado por un bloque de comentarios mal cerrado.
+- **2026-05-12** - Implementado sistema de multirroles con checkboxes y funcionalidad de edición de personal autorizado.
+- **2026-05-12** - Simplificación total del Maestro: Eliminación de Fuentes y Conexiones manuales; migración a modelo de permisos basado en Roles por Estructura PAS/Proyecto.
+- **2026-05-12** - Simplificación de estructura maestra y sistema de pre-registro de usuarios controlado.
 - **2026-04-27** - Implementación de la Vista de Revisión de Soportes (Auditoría) en el panel de Administración para revisar legalizaciones, aprobar y rechazar con galería dinámica de facturas.
 - **2026-04-27** - Añadida funcionalidad de eliminación/reemplazo de archivos en el flujo de pre-finalización de legalización.
 - **2026-04-27** - Ajuste de UX: Habilitación de formatos Word (.doc, .docx) para la subida de Cuenta de Cobro.

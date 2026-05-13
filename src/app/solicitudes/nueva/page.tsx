@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { Info, Plus, Trash2, Save, Send, AlertCircle, Loader2 } from "lucide-react";
+import { Info, Plus, Trash2, Save, Send, AlertCircle, Loader2, UserCheck } from "lucide-react";
 import SignaturePad from "@/components/SignaturePad";
 import { numeroALetras } from "@/lib/utils/numeroALetras";
 import toast, { Toaster } from "react-hot-toast";
@@ -46,8 +46,10 @@ export default function NuevaSolicitudPage() {
     const [signatureTab, setSignatureTab] = useState<"upload" | "draw">("upload");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [proyectosList, setProyectosList] = useState<any[]>([]);
-    const [centroCostosName, setCentroCostosName] = useState("");
     const [isSolicitante, setIsSolicitante] = useState(true);
+    const [aprobadorPrincipal, setAprobadorPrincipal] = useState<string>("");
+    const [aprobadorSuplente, setAprobadorSuplente] = useState<string>("");
+    const [suplenteSeleccionado, setSuplenteSeleccionado] = useState<string>("");
 
     // Inicialización y carga de sesión
     useEffect(() => {
@@ -66,41 +68,26 @@ export default function NuevaSolicitudPage() {
         fetchMaestroData();
     }, [user]);
 
+    // Auto-carga de aprobadores (principal y suplente) cuando se selecciona un proyecto
     useEffect(() => {
-        const fetchCentroCostos = async () => {
-            if (!proyecto) {
-                setCentroCostosName("");
-                return;
-            }
-            const selectedProject = proyectosList.find(p => p.id === proyecto || p.nombre === proyecto);
-            if (!selectedProject) {
-                setCentroCostosName("");
-                return;
-            }
-            const { data: connection, error: connErr } = await supabase
-                .from('conexiones_financieras')
-                .select('centro_costos_id')
-                .eq('estructura_id', selectedProject.id)
+        if (!user?.email || !proyecto) {
+            setAprobadorPrincipal("");
+            setAprobadorSuplente("");
+            setSuplenteSeleccionado("");
+            return;
+        }
+        const fetchAprobadores = async () => {
+            const { data } = await supabase
+                .from('perfiles_autorizados')
+                .select('aprobador_email, aprobador_suplente_email')
+                .eq('email', user.email)
                 .single();
-
-            if (connErr) console.error("Error fetching conexiones_financieras (Posible RLS):", connErr);
-
-            if (connection?.centro_costos_id) {
-                const { data: cc, error: ccErr } = await supabase
-                    .from('centros_costos')
-                    .select('nombre, codigo')
-                    .eq('id', connection.centro_costos_id)
-                    .single();
-                if (ccErr) console.error("Error fetching centros_costos (Posible RLS):", ccErr);
-                
-                if (cc) setCentroCostosName(`${cc.codigo} - ${cc.nombre}`);
-                else setCentroCostosName("No asignado");
-            } else {
-                setCentroCostosName("No asignado");
-            }
+            setAprobadorPrincipal(data?.aprobador_email || "");
+            setAprobadorSuplente(data?.aprobador_suplente_email || "");
+            setSuplenteSeleccionado(""); // reset al cambiar proyecto
         };
-        fetchCentroCostos();
-    }, [proyecto, proyectosList]);
+        fetchAprobadores();
+    }, [proyecto, user]);
 
     // Inicialización y carga de sesión
     useEffect(() => {
@@ -451,10 +438,40 @@ export default function NuevaSolicitudPage() {
                             </select>
                         </div>
 
-                        <div>
-                            <label className="form-label">Centro de Costos Vinculado</label>
-                            <input type="text" className="form-input" value={centroCostosName} placeholder="Se autocompletará..." readOnly />
-                        </div>
+                        {/* Aprobador Principal (read-only) */}
+                        {aprobadorPrincipal && (
+                            <div>
+                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <UserCheck size={14} color="#16a34a" /> Aprobador Principal
+                                </label>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    value={aprobadorPrincipal}
+                                    readOnly
+                                    style={{ backgroundColor: '#f0fdf4', color: '#16a34a', fontWeight: '600', border: '1px solid #bbf7d0' }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Aprobador Suplente (dropdown si existe) */}
+                        {aprobadorSuplente && (
+                            <div>
+                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <UserCheck size={14} color="#2563eb" /> Aprobador Suplente
+                                    <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: '400' }}>(Opcional — se usa si el principal no está disponible)</span>
+                                </label>
+                                <select
+                                    className="form-input"
+                                    value={suplenteSeleccionado}
+                                    onChange={e => setSuplenteSeleccionado(e.target.value)}
+                                    style={{ borderColor: '#bfdbfe' }}
+                                >
+                                    <option value="">— Usar aprobador principal —</option>
+                                    <option value={aprobadorSuplente}>{aprobadorSuplente}</option>
+                                </select>
+                            </div>
+                        )}
 
                         <div>
                             <label className="form-label">Correo electrónico</label>

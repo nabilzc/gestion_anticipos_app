@@ -65,7 +65,7 @@ function LoginContent() {
                     Ingresa al Sistema de Gestión de Anticipos
                 </p>
 
-                {error === "unauthorized" && (
+                {(error === "unauthorized" || error === "not_authorized") && (
                     <div style={{
                         background: "#fef2f2",
                         border: "1px solid #fee2e2",
@@ -80,7 +80,7 @@ function LoginContent() {
                         textAlign: "left"
                     }}>
                         <AlertCircle size={20} style={{ flexShrink: 0 }} />
-                        <span>Acceso denegado: Tu correo electrónico no está en la lista de usuarios autorizados.</span>
+                        <span>Tu correo no está autorizado. Contacta al Director Administrativo.</span>
                     </div>
                 )}
 
