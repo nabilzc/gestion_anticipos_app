@@ -1,11 +1,47 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network, ShieldCheck, Send, Receipt, FileText, Eye, ChevronDown, UserCheck } from "lucide-react";
+import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network, ShieldCheck, Send, Receipt, FileText, Eye, ChevronDown, UserCheck, Upload, Download, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import toast, { Toaster } from "react-hot-toast";
+import * as XLSX from "xlsx";
+
+type OrgSubcats = { [subcat: string]: string[] };
+type OrgHierarchy = { [cat: string]: { subcategorias?: OrgSubcats; cargos?: string[] } };
+
+const ORG_HIERARCHY: OrgHierarchy = {
+    'Dirección': {
+        cargos: ['Dir. Ejecutivo', 'Dir. Admin y Finanzas', 'Dir. Programas', 'Dir. Centros Especiales']
+    },
+    'Área': {
+        subcategorias: {
+            'Centros Especiales': ['M&L', 'Comunicaciones', 'Produc. Materiales y Textos'],
+            'Administración y Finanzas': ['Administración', 'Contabilidad', 'Finanzas', 'Recursos Humanos', 'Administración - PN']
+        }
+    },
+    'Programas': {
+        subcategorias: {
+            'Programa PAS': [
+                'Coord. Nacional PAS', 'Asesor Nacional PAS',
+                'Coord. Zonal – ZS', 'Coord. Zonal – ZCe', 'Coord. Zonal – ZN', 'Coord. Zonal – ZCa', 'Coord. Zonal – ZG',
+                'Coord. Unidad PAS – ZS', 'Coord. Unidad PAS – ZCe', 'Coord. Unidad PAS – ZN', 'Coord. Unidad PAS – ZCa', 'Coord. Unidad PAS – ZG'
+            ],
+            'SAT': ['Coord. Nacional SAT'],
+            'Cursos en Línea': ['Coord. Nacional - Cur. Línea', 'Asistente Cur. Línea']
+        }
+    },
+    'Proyectos': {
+        subcategorias: {
+            'Cultivando la Esperanza': ['Coord. Cultivando', 'Personal Operativo – CE', 'Coord. Capacitación de Maestros', 'Personal Operativo – CM'],
+            'Bosque Nativo': ['Coord. BN', 'Personal Operativo – BN']
+        }
+    },
+    'Centro de Desarrollo PN': {
+        cargos: ['Administración PN', 'Operaciones', 'Hotel/Eventos', 'Finca', 'Vivero', 'Casa custodio']
+    }
+};
 
 export default function AdministracionPage() {
     const { user, loading: authLoading } = useAuth();
@@ -38,7 +74,10 @@ export default function AdministracionPage() {
     const [saving, setSaving] = useState(false);
 
     // Form States for Maestro
-    const [newEstructuraForm, setNewEstructuraForm] = useState({ nombre: '', tipo: 'Programa' });
+    // Cascading form state for Estructuras Operativas in Maestro
+    const [estructuraCat, setEstructuraCat] = useState<string>('Dirección');
+    const [estructuraSubcat, setEstructuraSubcat] = useState<string>('');
+    const [estructuraCargo, setEstructuraCargo] = useState<string>('');
     const [editingEstructuraId, setEditingEstructuraId] = useState<string | null>(null);
     const [newCentroForm, setNewCentroForm] = useState({ codigo: '', nombre: '' });
     const [newConexionForm, setNewConexionForm] = useState({ centro_costos_id: '', estructura_id: '' });
@@ -52,12 +91,166 @@ export default function AdministracionPage() {
     // Key: email solicitante, Value: [principalEmail, suplenteEmail]
     const [aprobadoresSeleccionados, setAprobadoresSeleccionados] = useState<Record<string, string[]>>({}); 
 
+    // Inline structure assignment state (Option B panel)
+    const [inlineEstrForms, setInlineEstrForms] = useState<Record<string, {cat: string, subcat: string, cargo: string}>>({});
+    const [inlinePendingIds, setInlinePendingIds] = useState<Record<string, string[]>>({});
+    const [savingEstrUser, setSavingEstrUser] = useState<string | null>(null);
+
     // Audit Modal States
     const [showAuditModal, setShowAuditModal] = useState(false);
     const [auditAnticipo, setAuditAnticipo] = useState<any>(null);
     const [auditObservation, setAuditObservation] = useState('');
     const [isProcessingAudit, setIsProcessingAudit] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+    // Bulk Upload States
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const [bulkRows, setBulkRows] = useState<any[]>([]);
+    const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+    const [isBulkUploading, setIsBulkUploading] = useState(false);
+    const bulkFileRef = useRef<HTMLInputElement>(null);
+    const editFormRef = useRef<HTMLDivElement>(null);
+
+    // -------- BULK UPLOAD LOGIC --------
+    const downloadTemplate = () => {
+        const wb = XLSX.utils.book_new();
+
+        // ── Hoja 1: Plantilla de datos (solo datos del usuario, sin estructuras) ──
+        const headers = ['email', 'nombre_completo', 'es_solicitante', 'es_aprobador', 'es_administrador'];
+        const examples = [
+            ['jperez@fundaec.org', 'Juan Pérez',   'SI', 'NO', 'NO'],
+            ['mlopez@fundaec.org', 'María López',  'SI', 'SI', 'NO'],
+            ['aadmin@fundaec.org', 'Ana Admin',     'SI', 'NO', 'SI'],
+        ];
+        const ws1 = XLSX.utils.aoa_to_sheet([headers, ...examples]);
+        ws1['!cols'] = [{ wch: 32 }, { wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 18 }];
+        XLSX.utils.book_append_sheet(wb, ws1, 'Usuarios');
+
+        // ── Hoja 2: Instrucciones ──
+        const instrucciones = [
+            ['INSTRUCCIONES DE CARGA MASIVA DE USUARIOS'],
+            [''],
+            ['1. Completa la hoja "Usuarios" con un usuario por fila.'],
+            ['2. Los campos es_solicitante / es_aprobador / es_administrador aceptan solo: SI o NO'],
+            ['3. El email debe ser el correo institucional (@fundaec.org)'],
+            ['4. No elimines ni renombres las columnas.'],
+            [''],
+            ['NOTA: Las estructuras vinculadas se asignan DESPUES de subir los usuarios,'],
+            ['      directamente desde el panel "Asignación de Estructuras Pendiente"'],
+            ['      que aparece en la pestaña Talento y Permisos.'],
+            [''],
+            ['ROLES:'],
+            ['  - Solicitante:    puede crear solicitudes de anticipo'],
+            ['  - Aprobador:      puede aprobar solicitudes de otros'],
+            ['  - Administrador:  acceso completo al módulo de administración'],
+        ];
+        const ws2 = XLSX.utils.aoa_to_sheet(instrucciones);
+        ws2['!cols'] = [{ wch: 80 }];
+        XLSX.utils.book_append_sheet(wb, ws2, 'Instrucciones');
+
+        XLSX.writeFile(wb, 'plantilla_carga_masiva_usuarios.xlsx');
+        toast.success('Plantilla descargada con éxito');
+    };
+
+    const handleBulkFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const data = evt.target?.result;
+                const wb = XLSX.read(data, { type: 'binary' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+                const errors: string[] = [];
+                const parsed = rows.map((row, i) => {
+                    const rowNum = i + 2;
+                    const email = String(row['email'] || '').trim().toLowerCase();
+                    const nombre = String(row['nombre_completo'] || '').trim();
+                    const esSol = String(row['es_solicitante'] || '').trim().toUpperCase() === 'SI';
+                    const esAp  = String(row['es_aprobador']   || '').trim().toUpperCase() === 'SI';
+                    const esAdm = String(row['es_administrador'] || '').trim().toUpperCase() === 'SI';
+
+                    if (!email) { errors.push(`Fila ${rowNum}: El email es obligatorio.`); return null; }
+                    if (!email.includes('@')) { errors.push(`Fila ${rowNum}: Email inválido: "${email}".`); return null; }
+
+                    // Las estructuras se asignan desde el panel de asignación post-carga
+                    return { email, nombre_completo: nombre, es_solicitante: esSol, es_aprobador: esAp, es_administrador: esAdm, ids_programa_area: [] };
+                }).filter(Boolean);
+
+                setBulkErrors(errors);
+                setBulkRows(parsed);
+                setShowBulkModal(true);
+            } catch (err) {
+                toast.error('Error al leer el archivo Excel. Verifica el formato.');
+            }
+            if (bulkFileRef.current) bulkFileRef.current.value = '';
+        };
+        reader.readAsBinaryString(file);
+    };
+
+    const handleConfirmBulkUpload = async () => {
+        if (bulkRows.length === 0) return;
+        setIsBulkUploading(true);
+        const loadingToast = toast.loading(`Cargando ${bulkRows.length} usuarios...`);
+        try {
+            const { error } = await supabase
+                .from('perfiles_autorizados')
+                .upsert(bulkRows.map(r => ({
+                    email: r.email,
+                    nombre_completo: r.nombre_completo,
+                    es_solicitante: r.es_solicitante,
+                    es_aprobador: r.es_aprobador,
+                    es_administrador: r.es_administrador,
+                    ids_programa_area: [] // Se asignan post-carga desde el panel de asignación
+                })), { onConflict: 'email', ignoreDuplicates: false });
+            if (error) throw error;
+            toast.success(`¡${bulkRows.length} usuario(s) cargados! Ahora asigna sus estructuras.`, { id: loadingToast });
+            setShowBulkModal(false);
+            setBulkRows([]);
+            setBulkErrors([]);
+            fetchData();
+        } catch (err: any) {
+            toast.error(err.message || 'Error al cargar los usuarios', { id: loadingToast });
+        } finally {
+            setIsBulkUploading(false);
+        }
+    };
+
+    // -------- INLINE STRUCTURE ASSIGNMENT LOGIC (Option B) --------
+    const handleInlineAddEstructura = (email: string) => {
+        const form = inlineEstrForms[email] || { cat: 'Dirección', subcat: '', cargo: '' };
+        if (!form.cargo) return;
+        const nombreFinal = form.subcat ? `${form.subcat} > ${form.cargo}` : form.cargo;
+        const est = programasProyectos.find(p => p.tipo === form.cat && p.nombre === nombreFinal);
+        if (!est) { toast.error('Estructura no encontrada. Créala primero en Configuración Maestro.'); return; }
+        const current = inlinePendingIds[email] || [];
+        if (current.includes(est.id)) { toast.error('Esta estructura ya fue añadida.'); return; }
+        setInlinePendingIds(prev => ({ ...prev, [email]: [...current, est.id] }));
+        setInlineEstrForms(prev => ({ ...prev, [email]: { cat: form.cat, subcat: '', cargo: '' } }));
+    };
+
+    const handleSaveInlineEstructuras = async (perfil: any) => {
+        const pendingIds = inlinePendingIds[perfil.email] || [];
+        const currentIds = perfil.ids_programa_area || [];
+        const allIds = [...new Set([...currentIds, ...pendingIds])];
+        if (allIds.length === 0) { toast.error('Añade al menos una estructura antes de guardar.'); return; }
+        setSavingEstrUser(perfil.email);
+        try {
+            const { error } = await supabase.from('perfiles_autorizados')
+                .update({ ids_programa_area: allIds })
+                .eq('email', perfil.email);
+            if (error) throw error;
+            toast.success(`Estructuras guardadas para ${perfil.nombre_completo || perfil.email}`);
+            setInlinePendingIds(prev => { const n = { ...prev }; delete n[perfil.email]; return n; });
+            fetchData();
+        } catch (err: any) {
+            toast.error(err.message || 'Error al guardar estructuras');
+        } finally {
+            setSavingEstrUser(null);
+        }
+    };
 
     const fetchData = async () => {
         setLoading(true);
@@ -175,32 +368,23 @@ export default function AdministracionPage() {
     // -------- MAESTRO LOGIC --------
     const handleSaveEstructura = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newEstructuraForm.nombre.trim()) return;
+        if (!estructuraCargo) { toast.error('Selecciona un cargo/rol'); return; }
         setAddingMaestro(true);
         try {
-            const payload = {
-                nombre: newEstructuraForm.nombre.trim(),
-                tipo: newEstructuraForm.tipo,
-                activo: true
-            };
+            const nombreFinal = estructuraSubcat ? `${estructuraSubcat} > ${estructuraCargo}` : estructuraCargo;
+            const payload = { nombre: nombreFinal, tipo: estructuraCat, activo: true };
 
             if (editingEstructuraId) {
                 const { error } = await supabase.from('programas_proyectos_areas').update(payload).eq('id', editingEstructuraId);
-                if (error) {
-                    console.error("Supabase Error [Update programas_proyectos_areas]:", error);
-                    throw error;
-                }
+                if (error) { console.error("Supabase Error [Update]:", error); throw error; }
                 toast.success('Estructura actualizada con éxito');
                 setEditingEstructuraId(null);
             } else {
                 const { error } = await supabase.from('programas_proyectos_areas').insert([payload]);
-                if (error) {
-                    console.error("Supabase Error [Insert programas_proyectos_areas]:", error);
-                    throw error;
-                }
+                if (error) { console.error("Supabase Error [Insert]:", error); throw error; }
                 toast.success('Estructura añadida con éxito');
             }
-            setNewEstructuraForm({ nombre: '', tipo: 'Programa' });
+            setEstructuraCat('Dirección'); setEstructuraSubcat(''); setEstructuraCargo('');
             fetchData();
         } catch (error) {
             console.error("Error saving estructura:", error);
@@ -211,12 +395,15 @@ export default function AdministracionPage() {
     };
 
     const handleEditEstructuraClick = (p: any) => {
-        setNewEstructuraForm({ nombre: p.nombre, tipo: p.tipo });
+        setEstructuraCat(p.tipo || 'Dirección');
+        const parts: string[] = (p.nombre || '').split(' > ');
+        if (parts.length === 2) { setEstructuraSubcat(parts[0]); setEstructuraCargo(parts[1]); }
+        else { setEstructuraSubcat(''); setEstructuraCargo(p.nombre || ''); }
         setEditingEstructuraId(p.id);
     };
 
     const handleCancelEditEstructura = () => {
-        setNewEstructuraForm({ nombre: '', tipo: 'Programa' });
+        setEstructuraCat('Dirección'); setEstructuraSubcat(''); setEstructuraCargo('');
         setEditingEstructuraId(null);
     };
 
@@ -278,7 +465,10 @@ export default function AdministracionPage() {
             ids_programa_area: p.ids_programa_area || []
         });
         setEditingPerfil(true);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Scroll al formulario de edición con un pequeño delay para que React haya renderizado el estado
+        setTimeout(() => {
+            editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
     };
 
     const handleCancelEditPerfil = () => {
@@ -426,8 +616,143 @@ export default function AdministracionPage() {
             {/* TAB: USUARIOS */}
             {activeTab === 'usuarios' && (
                 <div style={{ display: 'grid', gap: '24px' }}>
+                    {/* Panel de Carga Masiva */}
+                    <div className="card" style={{ padding: '20px', background: 'linear-gradient(135deg, var(--primary) 0%, #6366f1 100%)', border: 'none', marginBottom: '0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                            <div>
+                                <h2 style={{ fontSize: '17px', fontWeight: '700', color: 'white', margin: '0 0 4px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Upload size={20} /> Carga Masiva de Usuarios
+                                </h2>
+                                <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.8)', margin: 0 }}>
+                                    Descarga la plantilla, complétala con tus usuarios y súbela para registrarlos todos a la vez.
+                                </p>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
+                                <button
+                                    onClick={downloadTemplate}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: 'white', cursor: 'pointer', fontWeight: '600', fontSize: '13px', backdropFilter: 'blur(8px)', transition: 'background 0.2s' }}
+                                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.25)')}
+                                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+                                >
+                                    <Download size={16} /> Descargar Plantilla
+                                </button>
+                                <label
+                                    style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', borderRadius: '8px', border: 'none', background: 'white', color: 'var(--primary)', cursor: 'pointer', fontWeight: '700', fontSize: '13px', transition: 'opacity 0.2s' }}
+                                    onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
+                                    onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+                                >
+                                    <Upload size={16} /> Cargar Archivo Excel
+                                    <input
+                                        ref={bulkFileRef}
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={handleBulkFile}
+                                        style={{ display: 'none' }}
+                                    />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ── Panel Asignación de Estructuras Pendiente (Option B) ── */}
+                    {perfilesAutorizados.filter(p => !p.ids_programa_area || p.ids_programa_area.length === 0).length > 0 && (
+                        <div className="card" style={{ padding: '24px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                                <Network size={20} color="#f59e0b" />
+                                <h2 style={{ fontSize: '17px', fontWeight: '700', margin: 0 }}>Asignación de Estructuras Pendiente</h2>
+                                <span style={{ fontSize: '12px', fontWeight: '700', padding: '3px 10px', borderRadius: '12px', backgroundColor: '#fef3c7', color: '#92400e' }}>
+                                    {perfilesAutorizados.filter(p => !p.ids_programa_area || p.ids_programa_area.length === 0).length} sin estructura
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                                {perfilesAutorizados.filter(p => !p.ids_programa_area || p.ids_programa_area.length === 0).map(perfil => {
+                                    const form = inlineEstrForms[perfil.email] || { cat: 'Dirección', subcat: '', cargo: '' };
+                                    const catData = ORG_HIERARCHY[form.cat];
+                                    const cargosDisp = form.subcat ? catData?.subcategorias?.[form.subcat] : catData?.cargos;
+                                    const pending = inlinePendingIds[perfil.email] || [];
+                                    return (
+                                        <div key={perfil.email} style={{ padding: '16px', backgroundColor: 'var(--muted)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                                            {/* User info row */}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                                                <div style={{ flex: 1, minWidth: '200px' }}>
+                                                    <div style={{ fontWeight: '700', fontSize: '14px' }}>{perfil.nombre_completo || perfil.email}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>{perfil.email}</div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                                    {perfil.es_solicitante && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#eff6ff', color: '#2563eb' }}>Solicitante</span>}
+                                                    {perfil.es_aprobador   && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#ecfdf5', color: '#059669' }}>Aprobador</span>}
+                                                    {perfil.es_administrador && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#fef2f2', color: '#dc2626' }}>Admin</span>}
+                                                </div>
+                                            </div>
+                                            {/* Cascade selectors */}
+                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                                <div style={{ flex: '1', minWidth: '130px' }}>
+                                                    <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '4px' }}>Categoría</label>
+                                                    <select value={form.cat}
+                                                        onChange={e => setInlineEstrForms(prev => ({ ...prev, [perfil.email]: { cat: e.target.value, subcat: '', cargo: '' } }))}
+                                                        style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', fontSize: '12px' }}>
+                                                        {Object.keys(ORG_HIERARCHY).map(c => <option key={c} value={c}>{c}</option>)}
+                                                    </select>
+                                                </div>
+                                                {catData?.subcategorias && (
+                                                    <div style={{ flex: '1', minWidth: '160px' }}>
+                                                        <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '4px' }}>Subcategoría</label>
+                                                        <select value={form.subcat}
+                                                            onChange={e => setInlineEstrForms(prev => ({ ...prev, [perfil.email]: { ...form, subcat: e.target.value, cargo: '' } }))}
+                                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', fontSize: '12px' }}>
+                                                            <option value="">-- Seleccionar --</option>
+                                                            {Object.keys(catData.subcategorias).map(s => <option key={s} value={s}>{s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                {(form.subcat || catData?.cargos) && cargosDisp && (
+                                                    <div style={{ flex: '1', minWidth: '180px' }}>
+                                                        <label style={{ display: 'block', fontSize: '10px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '4px' }}>Cargo / Rol</label>
+                                                        <select value={form.cargo}
+                                                            onChange={e => setInlineEstrForms(prev => ({ ...prev, [perfil.email]: { ...form, cargo: e.target.value } }))}
+                                                            style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', fontSize: '12px' }}>
+                                                            <option value="">-- Seleccionar --</option>
+                                                            {cargosDisp.map(c => <option key={c} value={c}>{c}</option>)}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                <button onClick={() => handleInlineAddEstructura(perfil.email)} disabled={!form.cargo}
+                                                    style={{ padding: '8px 14px', borderRadius: '6px', border: 'none', background: form.cargo ? 'var(--primary)' : 'var(--muted)', color: form.cargo ? 'white' : 'var(--muted-foreground)', cursor: form.cargo ? 'pointer' : 'not-allowed', fontSize: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', alignSelf: 'flex-end', whiteSpace: 'nowrap' }}>
+                                                    <Plus size={14} /> Añadir
+                                                </button>
+                                            </div>
+                                            {/* Pending chips + Save */}
+                                            {pending.length > 0 && (
+                                                <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                    <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Por guardar:</span>
+                                                    {pending.map(id => {
+                                                        const est = programasProyectos.find(p => p.id === id);
+                                                        return est ? (
+                                                            <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '12px', backgroundColor: 'var(--primary)', color: 'white', fontSize: '11px', fontWeight: '600' }}>
+                                                                [{est.tipo}] {est.nombre}
+                                                                <button onClick={() => setInlinePendingIds(prev => ({ ...prev, [perfil.email]: prev[perfil.email].filter(i => i !== id) }))}
+                                                                    style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '0', display: 'flex', alignItems: 'center' }}>
+                                                                    <X size={12} />
+                                                                </button>
+                                                            </span>
+                                                        ) : null;
+                                                    })}
+                                                    <button onClick={() => handleSaveInlineEstructuras(perfil)} disabled={savingEstrUser === perfil.email}
+                                                        style={{ marginLeft: 'auto', padding: '6px 18px', borderRadius: '8px', border: 'none', background: '#10b981', color: 'white', cursor: 'pointer', fontSize: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        {savingEstrUser === perfil.email ? <Clock size={14} className="animate-spin" /> : <Save size={14} />}
+                                                        Guardar
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Formulario para nuevo perfil */}
-                    <div className="card" style={{ padding: '24px' }}>
+                    <div ref={editFormRef} className="card" style={{ padding: '24px', scrollMarginTop: '16px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                             <h2 style={{ fontSize: '18px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                                 {editingPerfil ? <Pencil size={20} className="text-primary" /> : <Plus size={20} className="text-primary" />} 
@@ -450,7 +775,25 @@ export default function AdministracionPage() {
                                         value={newPerfilForm.email}
                                         onChange={(e) => setNewPerfilForm({...newPerfilForm, email: e.target.value})}
                                         placeholder="Ej: jperez@fundaec.org"
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: editingPerfil ? 'var(--muted)' : 'var(--background)', color: 'var(--foreground)' }}
+                                        style={{ 
+                                            width: '100%', 
+                                            padding: '10px 12px', 
+                                            borderRadius: '8px', 
+                                            border: '1.5px solid #cbd5e1', 
+                                            backgroundColor: editingPerfil ? '#f1f5f9' : '#ffffff', 
+                                            color: '#1e293b',
+                                            fontSize: '14px',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                                        }}
+                                        onFocus={(e) => {
+                                            e.target.style.borderColor = 'var(--primary)';
+                                            e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.15)';
+                                        }}
+                                        onBlur={(e) => {
+                                            e.target.style.borderColor = '#cbd5e1';
+                                            e.target.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)';
+                                        }}
                                     />
                                 </div>
                                 <div>
@@ -460,7 +803,25 @@ export default function AdministracionPage() {
                                         value={newPerfilForm.nombre_completo}
                                         onChange={(e) => setNewPerfilForm({...newPerfilForm, nombre_completo: e.target.value})}
                                         placeholder="Ej: Juan Perez"
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--foreground)' }}
+                                        style={{ 
+                                            width: '100%', 
+                                            padding: '10px 12px', 
+                                            borderRadius: '8px', 
+                                            border: '1.5px solid #cbd5e1', 
+                                            backgroundColor: '#ffffff', 
+                                            color: '#1e293b',
+                                            fontSize: '14px',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                                        }}
+                                        onFocus={(e) => {
+                                            e.target.style.borderColor = 'var(--primary)';
+                                            e.target.style.boxShadow = '0 0 0 3px rgba(37, 99, 235, 0.15)';
+                                        }}
+                                        onBlur={(e) => {
+                                            e.target.style.borderColor = '#cbd5e1';
+                                            e.target.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)';
+                                        }}
                                     />
                                 </div>
                                 <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
@@ -471,33 +832,41 @@ export default function AdministracionPage() {
                                         onClick={() => setShowEstructuraDropdown(!showEstructuraDropdown)}
                                         style={{ 
                                             width: '100%', 
-                                            minHeight: '42px',
-                                            padding: '8px 12px', 
+                                            minHeight: '44px',
+                                            padding: '8px 14px', 
                                             borderRadius: '8px', 
-                                            border: '1px solid var(--border)', 
-                                            backgroundColor: 'var(--background)', 
+                                            border: showEstructuraDropdown ? '1.5px solid var(--primary)' : '1.5px solid #cbd5e1', 
+                                            backgroundColor: '#ffffff', 
                                             cursor: 'pointer',
                                             display: 'flex',
                                             justifyContent: 'space-between',
                                             alignItems: 'center',
-                                            gap: '8px'
+                                            gap: '8px',
+                                            transition: 'all 0.2s ease',
+                                            boxShadow: showEstructuraDropdown ? '0 0 0 3px rgba(37, 99, 235, 0.15)' : '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (!showEstructuraDropdown) e.currentTarget.style.borderColor = '#94a3b8';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (!showEstructuraDropdown) e.currentTarget.style.borderColor = '#cbd5e1';
                                         }}
                                     >
                                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                                             {newPerfilForm.ids_programa_area.length === 0 ? (
-                                                <span style={{ color: 'var(--muted-foreground)', fontSize: '14px' }}>Seleccionar estructuras...</span>
+                                                <span style={{ color: '#64748b', fontSize: '14px' }}>Seleccionar estructuras...</span>
                                             ) : (
                                                 newPerfilForm.ids_programa_area.map(id => {
                                                     const est = programasProyectos.find(p => p.id === id);
                                                     return est ? (
-                                                        <span key={id} style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <span key={id} style={{ backgroundColor: 'var(--primary)', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                                             {est.nombre}
                                                         </span>
                                                     ) : null;
                                                 })
                                             )}
                                         </div>
-                                        <ChevronDown size={18} style={{ color: 'var(--muted-foreground)', transform: showEstructuraDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                                        <ChevronDown size={18} style={{ color: '#64748b', transform: showEstructuraDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                                     </div>
 
                                     {/* Menú Desplegable */}
@@ -693,47 +1062,118 @@ export default function AdministracionPage() {
                     
                     {/* Cajón 1: Estructuras Operativas */}
                     <div className="card" style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <FolderKanban size={20} className="text-primary" /> Estructuras Operativas
                         </h2>
                         <p style={{ fontSize: '13px', color: 'var(--muted-foreground)', marginBottom: '20px' }}>
-                            Crea Programas, Proyectos o Áreas organizacionales.
+                            Define cargos dentro de la jerarquía organizacional de FUNDAEC en 3 pasos.
                         </p>
-                        
-                        <form onSubmit={handleSaveEstructura} style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-                            <select 
-                                value={newEstructuraForm.tipo}
-                                onChange={(e) => setNewEstructuraForm({...newEstructuraForm, tipo: e.target.value})}
-                                style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--foreground)', minWidth: '110px' }}
-                            >
-                                <option value="Programa">Programa</option>
-                                <option value="Proyecto">Proyecto</option>
-                                <option value="Area">Area</option>
-                            </select>
-                            <input 
-                                type="text" 
-                                value={newEstructuraForm.nombre}
-                                onChange={(e) => setNewEstructuraForm({...newEstructuraForm, nombre: e.target.value})}
-                                placeholder="Nombre..." 
-                                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--foreground)' }}
-                            />
-                            {editingEstructuraId && (
-                                <button 
-                                    type="button"
-                                    onClick={handleCancelEditEstructura}
-                                    style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--foreground)', cursor: 'pointer', fontWeight: '500' }}
-                                >
-                                    Cancelar
-                                </button>
+                        <form onSubmit={handleSaveEstructura} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+                            {/* Step 1: Categoría */}
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>1. Categoría principal</label>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    {Object.keys(ORG_HIERARCHY).map(cat => (
+                                        <button key={cat} type="button"
+                                            onClick={() => { setEstructuraCat(cat); setEstructuraSubcat(''); setEstructuraCargo(''); }}
+                                            style={{
+                                                padding: '7px 16px',
+                                                borderRadius: '20px',
+                                                border: '2px solid',
+                                                borderColor: estructuraCat === cat ? 'var(--primary)' : '#94a3b8',
+                                                backgroundColor: estructuraCat === cat ? 'var(--primary)' : '#f1f5f9',
+                                                color: estructuraCat === cat ? 'white' : '#334155',
+                                                cursor: 'pointer',
+                                                fontSize: '13px',
+                                                fontWeight: '600',
+                                                boxShadow: estructuraCat === cat ? '0 2px 8px rgba(37,99,235,0.25)' : '0 1px 3px rgba(0,0,0,0.08)',
+                                                transition: 'all 0.15s ease'
+                                            }}
+                                            onMouseEnter={e => { if (estructuraCat !== cat) { e.currentTarget.style.borderColor = '#64748b'; e.currentTarget.style.backgroundColor = '#e2e8f0'; } }}
+                                            onMouseLeave={e => { if (estructuraCat !== cat) { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.backgroundColor = '#f1f5f9'; } }}
+                                        >{cat}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Step 2: Subcategoría — siempre dropdown para mayor claridad */}
+                            {estructuraCat && (
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>2. Subcategoría</label>
+                                    {ORG_HIERARCHY[estructuraCat]?.subcategorias ? (
+                                        <select
+                                            value={estructuraSubcat}
+                                            onChange={e => { setEstructuraSubcat(e.target.value); setEstructuraCargo(''); }}
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px 12px',
+                                                borderRadius: '8px',
+                                                border: estructuraSubcat ? '1.5px solid var(--primary)' : '1.5px solid #cbd5e1',
+                                                backgroundColor: '#ffffff',
+                                                color: estructuraSubcat ? '#1e293b' : '#64748b',
+                                                fontSize: '14px',
+                                                fontWeight: estructuraSubcat ? '600' : '400',
+                                                boxShadow: estructuraSubcat ? '0 0 0 3px rgba(37,99,235,0.12)' : '0 1px 2px rgba(0,0,0,0.05)',
+                                                transition: 'all 0.2s ease',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="">-- Seleccionar subcategoría --</option>
+                                            {Object.keys(ORG_HIERARCHY[estructuraCat].subcategorias!).map(sub => (
+                                                <option key={sub} value={sub}>{sub}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <div style={{ padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' }}>
+                                            Esta categoría no requiere subcategoría — continúa al paso siguiente.
+                                        </div>
+                                    )}
+                                </div>
                             )}
-                            <button 
-                                type="submit"
-                                disabled={addingMaestro || !newEstructuraForm.nombre.trim()}
-                                style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: (addingMaestro || !newEstructuraForm.nombre.trim()) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '500' }}
-                            >
-                                {editingEstructuraId ? <Save size={18} /> : <Plus size={18} />}
-                                {editingEstructuraId ? 'Guardar' : 'Añadir'}
-                            </button>
+
+                            {/* Step 3: Cargo */}
+                            {estructuraCat && (estructuraSubcat || ORG_HIERARCHY[estructuraCat]?.cargos) && (
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                        {ORG_HIERARCHY[estructuraCat]?.subcategorias ? '3.' : '2.'} Cargo / Rol específico
+                                    </label>
+                                    <select value={estructuraCargo} onChange={(e) => setEstructuraCargo(e.target.value)}
+                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--foreground)', fontSize: '14px' }}
+                                    >
+                                        <option value="">-- Seleccionar cargo --</option>
+                                        {(estructuraSubcat
+                                            ? ORG_HIERARCHY[estructuraCat]?.subcategorias?.[estructuraSubcat]
+                                            : ORG_HIERARCHY[estructuraCat]?.cargos
+                                        )?.map(cargo => (
+                                            <option key={cargo} value={cargo}>{cargo}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Preview */}
+                            {estructuraCargo && (
+                                <div style={{ padding: '10px 14px', backgroundColor: 'var(--muted)', borderRadius: '8px', fontSize: '13px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <Network size={14} color="var(--primary)" />
+                                    <span style={{ color: 'var(--muted-foreground)' }}>Se guardará como: </span>
+                                    <strong>[{estructuraCat}] {estructuraSubcat ? `${estructuraSubcat} > ` : ''}{estructuraCargo}</strong>
+                                </div>
+                            )}
+
+                            {/* Buttons */}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                {editingEstructuraId && (
+                                    <button type="button" onClick={handleCancelEditEstructura}
+                                        style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--foreground)', cursor: 'pointer', fontWeight: '500' }}>Cancelar
+                                    </button>
+                                )}
+                                <button type="submit" disabled={addingMaestro || !estructuraCargo}
+                                    style={{ flex: 1, padding: '10px 16px', borderRadius: '8px', border: 'none', background: (!estructuraCargo || addingMaestro) ? 'var(--muted)' : 'var(--primary)', color: (!estructuraCargo || addingMaestro) ? 'var(--muted-foreground)' : 'white', cursor: (!estructuraCargo || addingMaestro) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontWeight: '600', fontSize: '14px' }}
+                                >
+                                    {editingEstructuraId ? <Save size={18} /> : <Plus size={18} />}
+                                    {editingEstructuraId ? 'Actualizar Estructura' : 'Añadir al Sistema'}
+                                </button>
+                            </div>
                         </form>
 
                         <div style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', flex: 1 }}>
@@ -802,10 +1242,50 @@ export default function AdministracionPage() {
                                             const solEmail = solicitante.email;
                                             const solEstructurasIds: string[] = solicitante.ids_programa_area || [];
 
+                                            // ── Regla 1: Área hereda el aprobador director de su subcategoría ──
+                                            const AREA_DIRECTOR_MAP: Record<string, string> = {
+                                                'Administración y Finanzas': 'Dir. Admin y Finanzas',
+                                                'Centros Especiales':        'Dir. Centros Especiales',
+                                            };
+
+                                            const extraDirectorIds: string[] = [];
+                                            solEstructurasIds.forEach(id => {
+                                                const est = programasProyectos.find(p => p.id === id);
+                                                if (!est) return;
+
+                                                // Regla 1: solicitante de Área → busca su director de área
+                                                if (est.tipo === 'Área') {
+                                                    const subcat = (est.nombre || '').split(' > ')[0];
+                                                    const dirCargo = AREA_DIRECTOR_MAP[subcat];
+                                                    if (dirCargo) {
+                                                        const dirEst = programasProyectos.find(p =>
+                                                            p.tipo === 'Dirección' && p.nombre === dirCargo
+                                                        );
+                                                        if (dirEst && !extraDirectorIds.includes(dirEst.id))
+                                                            extraDirectorIds.push(dirEst.id);
+                                                    }
+                                                }
+
+                                                // ── Regla 2: Dirección puede ser aprobada por CUALQUIER otro director ──
+                                                if (est.tipo === 'Dirección') {
+                                                    programasProyectos
+                                                        .filter(p => p.tipo === 'Dirección')
+                                                        .forEach(p => {
+                                                            if (!extraDirectorIds.includes(p.id))
+                                                                extraDirectorIds.push(p.id);
+                                                        });
+                                                }
+                                            });
+
+                                            const idsElegibles = [...solEstructurasIds, ...extraDirectorIds];
+
+                                            // El administrador global puede ser su propio aprobador principal
+                                            const puedeAutoAprobarse = solicitante.es_administrador === true;
+
                                             const aprobadoresCompatibles = perfilesAutorizados.filter(p =>
                                                 p.es_aprobador &&
-                                                p.email !== solEmail &&
-                                                (p.ids_programa_area || []).some((id: string) => solEstructurasIds.includes(id))
+                                                (p.email !== solEmail || puedeAutoAprobarse) &&
+                                                (p.ids_programa_area || []).some((id: string) => idsElegibles.includes(id))
                                             );
 
                                             const estructurasNombres = solEstructurasIds
@@ -1249,6 +1729,115 @@ export default function AdministracionPage() {
                     <button onClick={() => setSelectedImage(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
                         <X size={32} />
                     </button>
+                </div>
+            )}
+
+            {/* Modal de Carga Masiva */}
+            {showBulkModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '20px' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '800px', backgroundColor: 'var(--background)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                        {/* Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Upload size={20} color="var(--primary)" /> Confirmar Carga Masiva
+                            </h3>
+                            <button onClick={() => { setShowBulkModal(false); setBulkRows([]); setBulkErrors([]); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
+                                <X size={22} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div style={{ overflowY: 'auto', flex: 1, padding: '20px 24px' }}>
+                            {/* Summary chips */}
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px', backgroundColor: '#ecfdf5', border: '1px solid #bbf7d0' }}>
+                                    <CheckCircle2 size={18} color="#16a34a" />
+                                    <span style={{ fontSize: '14px', fontWeight: '700', color: '#16a34a' }}>{bulkRows.length} usuario(s) válidos para cargar</span>
+                                </div>
+                                {bulkErrors.length > 0 && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '10px', backgroundColor: '#fef9c3', border: '1px solid #fde047' }}>
+                                        <AlertTriangle size={18} color="#ca8a04" />
+                                        <span style={{ fontSize: '14px', fontWeight: '700', color: '#ca8a04' }}>{bulkErrors.length} advertencia(s) encontrada(s)</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Advertencias */}
+                            {bulkErrors.length > 0 && (
+                                <div style={{ marginBottom: '20px', backgroundColor: '#fefce8', border: '1px solid #fde047', borderRadius: '10px', padding: '14px 16px' }}>
+                                    <p style={{ fontWeight: '700', fontSize: '13px', color: '#854d0e', marginBottom: '8px' }}>⚠️ Advertencias del archivo (filas con errores no se cargarán):</p>
+                                    <ul style={{ margin: 0, padding: '0 0 0 18px' }}>
+                                        {bulkErrors.map((err, i) => (
+                                            <li key={i} style={{ fontSize: '12px', color: '#92400e', marginBottom: '4px' }}>{err}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* Tabla de preview */}
+                            {bulkRows.length > 0 ? (
+                                <div style={{ border: '1px solid var(--border)', borderRadius: '10px', overflow: 'hidden' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                                        <thead>
+                                            <tr style={{ backgroundColor: 'var(--muted)', fontWeight: '600', color: 'var(--muted-foreground)', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                <th style={{ padding: '10px 14px' }}>#</th>
+                                                <th style={{ padding: '10px 14px' }}>Email</th>
+                                                <th style={{ padding: '10px 14px' }}>Nombre</th>
+                                                <th style={{ padding: '10px 14px' }}>Roles</th>
+                                                <th style={{ padding: '10px 14px' }}>Estructuras</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {bulkRows.map((r, i) => (
+                                                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                                                    <td style={{ padding: '10px 14px', color: 'var(--muted-foreground)', fontWeight: '600' }}>{i + 1}</td>
+                                                    <td style={{ padding: '10px 14px', fontWeight: '500' }}>{r.email}</td>
+                                                    <td style={{ padding: '10px 14px', color: 'var(--muted-foreground)' }}>{r.nombre_completo || '-'}</td>
+                                                    <td style={{ padding: '10px 14px' }}>
+                                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                            {r.es_solicitante && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#eff6ff', color: '#2563eb' }}>Sol.</span>}
+                                                            {r.es_aprobador && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#ecfdf5', color: '#10b981' }}>Apr.</span>}
+                                                            {r.es_administrador && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#fef2f2', color: '#ef4444' }}>Admin.</span>}
+                                                            {!r.es_solicitante && !r.es_aprobador && !r.es_administrador && <span style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>Sin rol</span>}
+                                                        </div>
+                                                    </td>
+                                                    <td style={{ padding: '10px 14px' }}>
+                                                        <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <Network size={12} /> Asignar post-carga
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--muted-foreground)' }}>
+                                    <AlertTriangle size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
+                                    <p style={{ fontWeight: '600' }}>No hay registros válidos para cargar.</p>
+                                    <p style={{ fontSize: '13px' }}>Revisa las advertencias y corrige el archivo.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+                            <button
+                                onClick={() => { setShowBulkModal(false); setBulkRows([]); setBulkErrors([]); }}
+                                style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontWeight: '500', color: 'var(--foreground)', fontSize: '14px' }}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmBulkUpload}
+                                disabled={isBulkUploading || bulkRows.length === 0}
+                                style={{ padding: '10px 24px', borderRadius: '8px', border: 'none', background: bulkRows.length === 0 ? 'var(--muted)' : 'var(--primary)', color: bulkRows.length === 0 ? 'var(--muted-foreground)' : 'white', cursor: (isBulkUploading || bulkRows.length === 0) ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px', opacity: isBulkUploading ? 0.7 : 1 }}
+                            >
+                                {isBulkUploading ? <Clock size={16} className="animate-spin" /> : <Upload size={16} />}
+                                {isBulkUploading ? 'Cargando...' : `Confirmar y Cargar ${bulkRows.length} Usuario(s)`}
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
