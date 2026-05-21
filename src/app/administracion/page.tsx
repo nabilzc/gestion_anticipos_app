@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network, ShieldCheck, Send, Receipt, FileText, Eye, ChevronDown, UserCheck, Upload, Download, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Users, Clock, Pencil, X, Save, Settings, Plus, Trash2, FolderKanban, Wallet, Network, ShieldCheck, Send, Receipt, FileText, Eye, ChevronDown, UserCheck, Upload, Download, AlertTriangle, CheckCircle2, Edit3 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import toast, { Toaster } from "react-hot-toast";
@@ -78,6 +78,9 @@ export default function AdministracionPage() {
     const [estructuraCat, setEstructuraCat] = useState<string>('Dirección');
     const [estructuraSubcat, setEstructuraSubcat] = useState<string>('');
     const [estructuraCargo, setEstructuraCargo] = useState<string>('');
+    const [isCustomCat, setIsCustomCat] = useState<boolean>(false);
+    const [isCustomSubcat, setIsCustomSubcat] = useState<boolean>(false);
+    const [isCustomCargo, setIsCustomCargo] = useState<boolean>(false);
     const [editingEstructuraId, setEditingEstructuraId] = useState<string | null>(null);
     const [newCentroForm, setNewCentroForm] = useState({ codigo: '', nombre: '' });
     const [newConexionForm, setNewConexionForm] = useState({ centro_costos_id: '', estructura_id: '' });
@@ -95,6 +98,39 @@ export default function AdministracionPage() {
     const [inlineEstrForms, setInlineEstrForms] = useState<Record<string, {cat: string, subcat: string, cargo: string}>>({});
     const [inlinePendingIds, setInlinePendingIds] = useState<Record<string, string[]>>({});
     const [savingEstrUser, setSavingEstrUser] = useState<string | null>(null);
+
+    // Custom Confirm Modal State
+    const [confirmState, setConfirmState] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        resolve: ((value: boolean) => void) | null;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        resolve: null
+    });
+
+    const askConfirm = (title: string, message: string): Promise<boolean> => {
+        return new Promise((resolve) => {
+            setConfirmState({
+                isOpen: true,
+                title,
+                message,
+                resolve
+            });
+        });
+    };
+
+    // Bulk Rename Hierarchy States
+    const [showRenameModal, setShowRenameModal] = useState(false);
+    const [renameLevel, setRenameLevel] = useState<'cat' | 'subcat' | 'cargo'>('cat');
+    const [renameCatScope, setRenameCatScope] = useState('');
+    const [renameSubcatScope, setRenameSubcatScope] = useState('');
+    const [renameOldName, setRenameOldName] = useState('');
+    const [renameNewName, setRenameNewName] = useState('');
+    const [isRenaming, setIsRenaming] = useState(false);
 
     // Audit Modal States
     const [showAuditModal, setShowAuditModal] = useState(false);
@@ -219,12 +255,33 @@ export default function AdministracionPage() {
     };
 
     // -------- INLINE STRUCTURE ASSIGNMENT LOGIC (Option B) --------
-    const handleInlineAddEstructura = (email: string) => {
+    const handleInlineAddEstructura = async (email: string) => {
         const form = inlineEstrForms[email] || { cat: 'Dirección', subcat: '', cargo: '' };
         if (!form.cargo) return;
         const nombreFinal = form.subcat ? `${form.subcat} > ${form.cargo}` : form.cargo;
-        const est = programasProyectos.find(p => p.tipo === form.cat && p.nombre === nombreFinal);
-        if (!est) { toast.error('Estructura no encontrada. Créala primero en Configuración Maestro.'); return; }
+        let est = programasProyectos.find(p => p.tipo === form.cat && p.nombre === nombreFinal);
+        
+        if (!est) {
+            const confirmed = await askConfirm(
+                'Confirmar Asignación',
+                `La estructura operativa [${form.cat}] ${nombreFinal} no existe en el Maestro. ¿Estás seguro de que deseas guardar esta nueva asignación de estructura y agregarla al maestro?`
+            );
+            if (!confirmed) return;
+            const loadingToast = toast.loading('Creando nueva estructura...');
+            try {
+                const payload = { nombre: nombreFinal, tipo: form.cat, activo: true };
+                const { data, error } = await supabase.from('programas_proyectos_areas').insert([payload]).select().single();
+                if (error) throw error;
+                toast.success('Nueva estructura creada en Configuración Maestro', { id: loadingToast });
+                est = data;
+                // Refrescar lista de estructuras en el background
+                fetchData();
+            } catch (err: any) {
+                toast.error('Error al crear la estructura operativa', { id: loadingToast });
+                return;
+            }
+        }
+        
         const current = inlinePendingIds[email] || [];
         if (current.includes(est.id)) { toast.error('Esta estructura ya fue añadida.'); return; }
         setInlinePendingIds(prev => ({ ...prev, [email]: [...current, est.id] }));
@@ -366,6 +423,51 @@ export default function AdministracionPage() {
     };
 
     // -------- MAESTRO LOGIC --------
+    const handleBulkRename = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!renameOldName || !renameNewName) { toast.error('Selecciona el valor actual e ingresa el nuevo nombre.'); return; }
+        
+        const confirmed = await askConfirm(
+            '⚠️ Advertencia de Reglas de Negocio',
+            'Si estás renombrando áreas principales (ej. "Dirección") o subcategorías base (ej. "Administración y Finanzas"), ten en cuenta que el sistema de asignación automática de aprobadores depende de esos nombres exactos en el código para funcionar correctamente. Si modificas estos nombres, deberás notificar al equipo de desarrollo para que actualice las reglas y el sistema siga siendo coherente. ¿Deseas aplicar los cambios de todas formas?'
+        );
+        if (!confirmed) return;
+
+        setIsRenaming(true);
+        try {
+            if (renameLevel === 'cat') {
+                const { error } = await supabase.from('programas_proyectos_areas').update({ tipo: renameNewName }).eq('tipo', renameOldName);
+                if (error) throw error;
+            } else if (renameLevel === 'subcat') {
+                if (!renameCatScope) { toast.error('Selecciona la categoría principal'); setIsRenaming(false); return; }
+                const { data: rows, error: fetchErr } = await supabase.from('programas_proyectos_areas').select('*').eq('tipo', renameCatScope).like('nombre', `${renameOldName} > %`);
+                if (fetchErr) throw fetchErr;
+                
+                for (const r of rows || []) {
+                    const updatedNombre = r.nombre.replace(`${renameOldName} > `, `${renameNewName} > `);
+                    await supabase.from('programas_proyectos_areas').update({ nombre: updatedNombre }).eq('id', r.id);
+                }
+            } else if (renameLevel === 'cargo') {
+                if (!renameCatScope) { toast.error('Selecciona la categoría principal'); setIsRenaming(false); return; }
+                const oldFullName = renameSubcatScope ? `${renameSubcatScope} > ${renameOldName}` : renameOldName;
+                const newFullName = renameSubcatScope ? `${renameSubcatScope} > ${renameNewName}` : renameNewName;
+                
+                const { error } = await supabase.from('programas_proyectos_areas').update({ nombre: newFullName }).eq('tipo', renameCatScope).eq('nombre', oldFullName);
+                if (error) throw error;
+            }
+            
+            toast.success('Nombre actualizado exitosamente');
+            setShowRenameModal(false);
+            setRenameOldName('');
+            setRenameNewName('');
+            fetchData();
+        } catch (error: any) {
+            console.error("Error bulk renaming:", error);
+            toast.error(error.message || 'Error al actualizar nombres');
+        } finally {
+            setIsRenaming(false);
+        }
+    };
     const handleSaveEstructura = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!estructuraCargo) { toast.error('Selecciona un cargo/rol'); return; }
@@ -385,6 +487,7 @@ export default function AdministracionPage() {
                 toast.success('Estructura añadida con éxito');
             }
             setEstructuraCat('Dirección'); setEstructuraSubcat(''); setEstructuraCargo('');
+            setIsCustomCat(false); setIsCustomSubcat(false); setIsCustomCargo(false);
             fetchData();
         } catch (error) {
             console.error("Error saving estructura:", error);
@@ -400,11 +503,17 @@ export default function AdministracionPage() {
         if (parts.length === 2) { setEstructuraSubcat(parts[0]); setEstructuraCargo(parts[1]); }
         else { setEstructuraSubcat(''); setEstructuraCargo(p.nombre || ''); }
         setEditingEstructuraId(p.id);
+        setIsCustomCat(false);
+        setIsCustomSubcat(false);
+        setIsCustomCargo(false);
     };
 
     const handleCancelEditEstructura = () => {
         setEstructuraCat('Dirección'); setEstructuraSubcat(''); setEstructuraCargo('');
         setEditingEstructuraId(null);
+        setIsCustomCat(false);
+        setIsCustomSubcat(false);
+        setIsCustomCargo(false);
     };
 
     const handleDeleteEstructura = async (id: string) => {
@@ -552,6 +661,37 @@ export default function AdministracionPage() {
         );
     }
 
+    const dynamicHierarchy = React.useMemo(() => {
+        const hierarchy: OrgHierarchy = JSON.parse(JSON.stringify(ORG_HIERARCHY));
+        programasProyectos.forEach(p => {
+            const cat = p.tipo;
+            if (!cat) return;
+            if (!hierarchy[cat]) {
+                hierarchy[cat] = { subcategorias: {}, cargos: [] };
+            }
+            
+            const nombre = p.nombre || '';
+            const parts = nombre.split(' > ');
+            
+            if (parts.length === 2) {
+                const sub = parts[0];
+                const cargo = parts[1];
+                if (!hierarchy[cat].subcategorias) hierarchy[cat].subcategorias = {};
+                if (!hierarchy[cat].subcategorias[sub]) hierarchy[cat].subcategorias[sub] = [];
+                if (!hierarchy[cat].subcategorias[sub].includes(cargo)) {
+                    hierarchy[cat].subcategorias[sub].push(cargo);
+                }
+            } else if (parts.length === 1 && parts[0] !== '') {
+                const cargo = parts[0];
+                if (!hierarchy[cat].cargos) hierarchy[cat].cargos = [];
+                if (!hierarchy[cat].cargos.includes(cargo)) {
+                    hierarchy[cat].cargos.push(cargo);
+                }
+            }
+        });
+        return hierarchy;
+    }, [programasProyectos]);
+
     return (
         <div style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '40px', paddingTop: '40px' }}>
             <Toaster position="top-right" />
@@ -667,7 +807,7 @@ export default function AdministracionPage() {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 {perfilesAutorizados.filter(p => !p.ids_programa_area || p.ids_programa_area.length === 0).map(perfil => {
                                     const form = inlineEstrForms[perfil.email] || { cat: 'Dirección', subcat: '', cargo: '' };
-                                    const catData = ORG_HIERARCHY[form.cat];
+                                    const catData = dynamicHierarchy[form.cat];
                                     const cargosDisp = form.subcat ? catData?.subcategorias?.[form.subcat] : catData?.cargos;
                                     const pending = inlinePendingIds[perfil.email] || [];
                                     return (
@@ -691,7 +831,7 @@ export default function AdministracionPage() {
                                                     <select value={form.cat}
                                                         onChange={e => setInlineEstrForms(prev => ({ ...prev, [perfil.email]: { cat: e.target.value, subcat: '', cargo: '' } }))}
                                                         style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', fontSize: '12px' }}>
-                                                        {Object.keys(ORG_HIERARCHY).map(c => <option key={c} value={c}>{c}</option>)}
+                                                        {Object.keys(dynamicHierarchy).map(c => <option key={c} value={c}>{c}</option>)}
                                                     </select>
                                                 </div>
                                                 {catData?.subcategorias && (
@@ -1062,9 +1202,14 @@ export default function AdministracionPage() {
                     
                     {/* Cajón 1: Estructuras Operativas */}
                     <div className="card" style={{ padding: '24px', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                        <h2 style={{ fontSize: '18px', fontWeight: '600', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <FolderKanban size={20} className="text-primary" /> Estructuras Operativas
-                        </h2>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <h2 style={{ fontSize: '18px', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <FolderKanban size={20} className="text-primary" /> Estructuras Operativas
+                            </h2>
+                            <button onClick={() => setShowRenameModal(true)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '8px', padding: '6px 12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--foreground)' }}>
+                                <Edit3 size={14} /> Renombrar Niveles
+                            </button>
+                        </div>
                         <p style={{ fontSize: '13px', color: 'var(--muted-foreground)', marginBottom: '20px' }}>
                             Define cargos dentro de la jerarquía organizacional de FUNDAEC en 3 pasos.
                         </p>
@@ -1072,38 +1217,68 @@ export default function AdministracionPage() {
                             {/* Step 1: Categoría */}
                             <div>
                                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>1. Categoría principal</label>
-                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                    {Object.keys(ORG_HIERARCHY).map(cat => (
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                    {Object.keys(dynamicHierarchy).map(cat => (
                                         <button key={cat} type="button"
-                                            onClick={() => { setEstructuraCat(cat); setEstructuraSubcat(''); setEstructuraCargo(''); }}
+                                            onClick={() => { setEstructuraCat(cat); setEstructuraSubcat(''); setEstructuraCargo(''); setIsCustomCat(false); setIsCustomSubcat(false); setIsCustomCargo(false); }}
                                             style={{
                                                 padding: '7px 16px',
                                                 borderRadius: '20px',
                                                 border: '2px solid',
-                                                borderColor: estructuraCat === cat ? 'var(--primary)' : '#94a3b8',
-                                                backgroundColor: estructuraCat === cat ? 'var(--primary)' : '#f1f5f9',
-                                                color: estructuraCat === cat ? 'white' : '#334155',
+                                                borderColor: (!isCustomCat && estructuraCat === cat) ? 'var(--primary)' : '#94a3b8',
+                                                backgroundColor: (!isCustomCat && estructuraCat === cat) ? 'var(--primary)' : '#f1f5f9',
+                                                color: (!isCustomCat && estructuraCat === cat) ? 'white' : '#334155',
                                                 cursor: 'pointer',
                                                 fontSize: '13px',
                                                 fontWeight: '600',
-                                                boxShadow: estructuraCat === cat ? '0 2px 8px rgba(37,99,235,0.25)' : '0 1px 3px rgba(0,0,0,0.08)',
+                                                boxShadow: (!isCustomCat && estructuraCat === cat) ? '0 2px 8px rgba(37,99,235,0.25)' : '0 1px 3px rgba(0,0,0,0.08)',
                                                 transition: 'all 0.15s ease'
                                             }}
-                                            onMouseEnter={e => { if (estructuraCat !== cat) { e.currentTarget.style.borderColor = '#64748b'; e.currentTarget.style.backgroundColor = '#e2e8f0'; } }}
-                                            onMouseLeave={e => { if (estructuraCat !== cat) { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.backgroundColor = '#f1f5f9'; } }}
                                         >{cat}</button>
                                     ))}
+                                    {isCustomCat ? (
+                                        <input 
+                                            autoFocus
+                                            type="text" 
+                                            placeholder="Nueva categoría..." 
+                                            value={estructuraCat} 
+                                            onChange={e => setEstructuraCat(e.target.value)} 
+                                            style={{ padding: '6px 12px', borderRadius: '20px', border: '2px solid var(--primary)', fontSize: '13px', outline: 'none' }}
+                                        />
+                                    ) : (
+                                        <button type="button"
+                                            onClick={() => { setIsCustomCat(true); setEstructuraCat(''); setEstructuraSubcat(''); setEstructuraCargo(''); setIsCustomSubcat(false); setIsCustomCargo(false); }}
+                                            style={{
+                                                padding: '7px 16px', borderRadius: '20px', border: '2px dashed #94a3b8', backgroundColor: 'transparent', color: '#64748b', cursor: 'pointer', fontSize: '13px', fontWeight: '600'
+                                            }}
+                                        >+ Nueva</button>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Step 2: Subcategoría — siempre dropdown para mayor claridad */}
+                            {/* Step 2: Subcategoría */}
                             {estructuraCat && (
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>2. Subcategoría</label>
-                                    {ORG_HIERARCHY[estructuraCat]?.subcategorias ? (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>2. Subcategoría</label>
+                                        <button type="button" onClick={() => { setIsCustomSubcat(!isCustomSubcat); setEstructuraSubcat(''); setEstructuraCargo(''); setIsCustomCargo(false); }} style={{ fontSize: '11px', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>
+                                            {isCustomSubcat ? 'Seleccionar existente' : '+ Nueva subcategoría'}
+                                        </button>
+                                    </div>
+                                    
+                                    {isCustomSubcat ? (
+                                        <input 
+                                            autoFocus
+                                            type="text" 
+                                            placeholder="Nombre de la nueva subcategoría..." 
+                                            value={estructuraSubcat} 
+                                            onChange={e => setEstructuraSubcat(e.target.value)} 
+                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid var(--primary)', fontSize: '14px', outline: 'none' }}
+                                        />
+                                    ) : dynamicHierarchy[estructuraCat]?.subcategorias && Object.keys(dynamicHierarchy[estructuraCat].subcategorias).length > 0 ? (
                                         <select
                                             value={estructuraSubcat}
-                                            onChange={e => { setEstructuraSubcat(e.target.value); setEstructuraCargo(''); }}
+                                            onChange={e => { setEstructuraSubcat(e.target.value); setEstructuraCargo(''); setIsCustomCargo(false); }}
                                             style={{
                                                 width: '100%',
                                                 padding: '10px 12px',
@@ -1119,35 +1294,52 @@ export default function AdministracionPage() {
                                             }}
                                         >
                                             <option value="">-- Seleccionar subcategoría --</option>
-                                            {Object.keys(ORG_HIERARCHY[estructuraCat].subcategorias!).map(sub => (
+                                            {Object.keys(dynamicHierarchy[estructuraCat].subcategorias).map(sub => (
                                                 <option key={sub} value={sub}>{sub}</option>
                                             ))}
                                         </select>
                                     ) : (
                                         <div style={{ padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', backgroundColor: '#f8fafc', color: '#94a3b8', fontSize: '13px', fontStyle: 'italic' }}>
-                                            Esta categoría no requiere subcategoría — continúa al paso siguiente.
+                                            Esta categoría no tiene subcategorías predefinidas. Puedes añadir una nueva si lo necesitas.
                                         </div>
                                     )}
                                 </div>
                             )}
 
                             {/* Step 3: Cargo */}
-                            {estructuraCat && (estructuraSubcat || ORG_HIERARCHY[estructuraCat]?.cargos) && (
+                            {estructuraCat && (estructuraSubcat || dynamicHierarchy[estructuraCat]?.cargos || isCustomCat || isCustomSubcat) && (
                                 <div>
-                                    <label style={{ display: 'block', marginBottom: '8px', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                                        {ORG_HIERARCHY[estructuraCat]?.subcategorias ? '3.' : '2.'} Cargo / Rol específico
-                                    </label>
-                                    <select value={estructuraCargo} onChange={(e) => setEstructuraCargo(e.target.value)}
-                                        style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--foreground)', fontSize: '14px' }}
-                                    >
-                                        <option value="">-- Seleccionar cargo --</option>
-                                        {(estructuraSubcat
-                                            ? ORG_HIERARCHY[estructuraCat]?.subcategorias?.[estructuraSubcat]
-                                            : ORG_HIERARCHY[estructuraCat]?.cargos
-                                        )?.map(cargo => (
-                                            <option key={cargo} value={cargo}>{cargo}</option>
-                                        ))}
-                                    </select>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                                            {(dynamicHierarchy[estructuraCat]?.subcategorias || isCustomSubcat) ? '3.' : '2.'} Cargo / Rol específico
+                                        </label>
+                                        <button type="button" onClick={() => { setIsCustomCargo(!isCustomCargo); setEstructuraCargo(''); }} style={{ fontSize: '11px', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>
+                                            {isCustomCargo ? 'Seleccionar existente' : '+ Nuevo cargo'}
+                                        </button>
+                                    </div>
+                                    
+                                    {isCustomCargo ? (
+                                        <input 
+                                            autoFocus
+                                            type="text" 
+                                            placeholder="Nombre del nuevo cargo..." 
+                                            value={estructuraCargo} 
+                                            onChange={e => setEstructuraCargo(e.target.value)} 
+                                            style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid var(--primary)', fontSize: '14px', outline: 'none' }}
+                                        />
+                                    ) : (
+                                        <select value={estructuraCargo} onChange={(e) => setEstructuraCargo(e.target.value)}
+                                            style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--background)', color: 'var(--foreground)', fontSize: '14px' }}
+                                        >
+                                            <option value="">-- Seleccionar cargo --</option>
+                                            {(estructuraSubcat && dynamicHierarchy[estructuraCat]?.subcategorias
+                                                ? dynamicHierarchy[estructuraCat]?.subcategorias?.[estructuraSubcat]
+                                                : dynamicHierarchy[estructuraCat]?.cargos
+                                            )?.map((cargo: string) => (
+                                                <option key={cargo} value={cargo}>{cargo}</option>
+                                            ))}
+                                        </select>
+                                    )}
                                 </div>
                             )}
 
@@ -1242,51 +1434,152 @@ export default function AdministracionPage() {
                                             const solEmail = solicitante.email;
                                             const solEstructurasIds: string[] = solicitante.ids_programa_area || [];
 
-                                            // ── Regla 1: Área hereda el aprobador director de su subcategoría ──
-                                            const AREA_DIRECTOR_MAP: Record<string, string> = {
-                                                'Administración y Finanzas': 'Dir. Admin y Finanzas',
-                                                'Centros Especiales':        'Dir. Centros Especiales',
-                                            };
-
-                                            const extraDirectorIds: string[] = [];
-                                            solEstructurasIds.forEach(id => {
-                                                const est = programasProyectos.find(p => p.id === id);
-                                                if (!est) return;
-
-                                                // Regla 1: solicitante de Área → busca su director de área
-                                                if (est.tipo === 'Área') {
-                                                    const subcat = (est.nombre || '').split(' > ')[0];
-                                                    const dirCargo = AREA_DIRECTOR_MAP[subcat];
-                                                    if (dirCargo) {
-                                                        const dirEst = programasProyectos.find(p =>
-                                                            p.tipo === 'Dirección' && p.nombre === dirCargo
-                                                        );
-                                                        if (dirEst && !extraDirectorIds.includes(dirEst.id))
-                                                            extraDirectorIds.push(dirEst.id);
-                                                    }
-                                                }
-
-                                                // ── Regla 2: Dirección puede ser aprobada por CUALQUIER otro director ──
-                                                if (est.tipo === 'Dirección') {
-                                                    programasProyectos
-                                                        .filter(p => p.tipo === 'Dirección')
-                                                        .forEach(p => {
-                                                            if (!extraDirectorIds.includes(p.id))
-                                                                extraDirectorIds.push(p.id);
-                                                        });
-                                                }
-                                            });
-
-                                            const idsElegibles = [...solEstructurasIds, ...extraDirectorIds];
-
                                             // El administrador global puede ser su propio aprobador principal
                                             const puedeAutoAprobarse = solicitante.es_administrador === true;
 
-                                            const aprobadoresCompatibles = perfilesAutorizados.filter(p =>
-                                                p.es_aprobador &&
-                                                (p.email !== solEmail || puedeAutoAprobarse) &&
-                                                (p.ids_programa_area || []).some((id: string) => idsElegibles.includes(id))
-                                            );
+                                            const getZoneSuffix = (cargoName: string) => {
+                                                const parts = cargoName.split(/[–-]/);
+                                                return parts.length > 1 ? parts[1].trim() : '';
+                                            };
+
+                                            const aprobadoresCompatibles = perfilesAutorizados.filter(p => {
+                                                // 1. Debe tener el rol de aprobador
+                                                if (!p.es_aprobador) return false;
+                                                // 2. Evitar auto-aprobación a menos que sea administrador global
+                                                if (p.email === solEmail && !puedeAutoAprobarse) return false;
+
+                                                // 3. Estructuras del solicitante
+                                                const solEstructuras = solEstructurasIds
+                                                    .map(id => programasProyectos.find(ep => ep.id === id))
+                                                    .filter(Boolean);
+
+                                                // 4. Estructuras del aprobador candidato
+                                                const apEstructuras = (p.ids_programa_area || [])
+                                                    .map((id: string) => programasProyectos.find(ep => ep.id === id))
+                                                    .filter(Boolean);
+
+                                                // ── Excepción especial para Nabil Zapata ──
+                                                if (solEmail === 'nzapata@fundaec.org') {
+                                                    const hasFinanzas = apEstructuras.some((apEst: any) => 
+                                                        apEst.tipo === 'Área' && apEst.nombre === 'Administración y Finanzas > Finanzas'
+                                                    );
+                                                    if (hasFinanzas) return true;
+                                                }
+
+                                                // 5. Debe coincidir al menos una regla jerárquica para alguna estructura del solicitante
+                                                return solEstructuras.some((solEst: any) => {
+                                                    const solTipo = solEst.tipo;
+                                                    const solNombre = solEst.nombre || '';
+                                                    const solParts = solNombre.split(' > ');
+                                                    const solSubcat = solParts.length === 2 ? solParts[0] : '';
+                                                    const solCargo = solParts.length === 2 ? solParts[1] : solParts[0];
+
+                                                    return apEstructuras.some((apEst: any) => {
+                                                        const apTipo = apEst.tipo;
+                                                        const apNombre = apEst.nombre || '';
+                                                        const apParts = apNombre.split(' > ');
+                                                        const apSubcat = apParts.length === 2 ? apParts[0] : '';
+                                                        const apCargo = apParts.length === 2 ? apParts[1] : apParts[0];
+
+                                                        // ── Cargo Específico: Asistente Administrativo PAS Nacional ──
+                                                        if (solCargo.includes('Asistente Admin') && solCargo.includes('PAS Nacional')) {
+                                                            return (
+                                                                apTipo === 'Programas' &&
+                                                                (apNombre === 'Programa PAS > Asesor Nacional PAS' ||
+                                                                 apNombre === 'Programa PAS > Coord. Nacional PAS')
+                                                            );
+                                                        }
+
+                                                        // ── Cargo Específico: Administración PN ──
+                                                        if (solCargo === 'Administración PN') {
+                                                            return (
+                                                                apTipo === 'Dirección' &&
+                                                                (apNombre === 'Dir. Programas' ||
+                                                                 apNombre === 'Dir. Admin y Finanzas')
+                                                            );
+                                                        }
+
+                                                        // ── Regla A: Centros Especiales ──
+                                                        if (solTipo === 'Área' && solSubcat === 'Centros Especiales') {
+                                                            return (
+                                                                (apTipo === 'Área' && apSubcat === 'Centros Especiales') ||
+                                                                (apTipo === 'Dirección' && apNombre === 'Dir. Centros Especiales')
+                                                            );
+                                                        }
+
+                                                        // ── Regla B: Administración y Finanzas ──
+                                                        if (solTipo === 'Área' && solSubcat === 'Administración y Finanzas') {
+                                                            return (
+                                                                (apTipo === 'Área' && apSubcat === 'Administración y Finanzas') ||
+                                                                (apTipo === 'Dirección' && apNombre === 'Dir. Admin y Finanzas')
+                                                            );
+                                                        }
+
+                                                        // ── Regla C: Programa PAS ──
+                                                        if (solTipo === 'Programas' && solSubcat === 'Programa PAS') {
+                                                            if (solCargo.startsWith('Coord. Unidad PAS')) {
+                                                                const solZone = getZoneSuffix(solCargo);
+                                                                const isMatchingZonal = apCargo.startsWith('Coord. Zonal') && getZoneSuffix(apCargo) === solZone;
+                                                                return (
+                                                                    (apTipo === 'Programas' && isMatchingZonal) ||
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Asesor Nacional PAS') ||
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Coord. Nacional PAS')
+                                                                );
+                                                            }
+                                                            if (solCargo.startsWith('Coord. Zonal')) {
+                                                                return (
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Asesor Nacional PAS') ||
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Coord. Nacional PAS')
+                                                                );
+                                                            }
+                                                            if (solCargo === 'Asesor Nacional PAS') {
+                                                                return (
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Asesor Nacional PAS') ||
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Coord. Nacional PAS')
+                                                                );
+                                                            }
+                                                            if (solCargo === 'Coord. Nacional PAS') {
+                                                                return (
+                                                                    (apTipo === 'Programas' && apNombre === 'Programa PAS > Asesor Nacional PAS')
+                                                                );
+                                                            }
+                                                        }
+
+                                                        // ── Regla C-2: Cursos en Línea ──
+                                                        if (solTipo === 'Programas' && solSubcat === 'Cursos en Línea') {
+                                                            return (
+                                                                apTipo === 'Programas' &&
+                                                                apNombre === 'Cursos en Línea > Coord. Nacional - Cur. Línea'
+                                                            );
+                                                        }
+
+                                                        // ── Regla D: Cultivando la Esperanza ──
+                                                        if (solTipo === 'Proyectos' && solSubcat === 'Cultivando la Esperanza') {
+                                                            return (
+                                                                apTipo === 'Proyectos' &&
+                                                                (apNombre === 'Cultivando la Esperanza > Coord. Cultivando' ||
+                                                                 apNombre === 'Cultivando la Esperanza > Coord. Capacitación de Maestros')
+                                                            );
+                                                        }
+
+                                                        // ── Regla E: Bosque Nativo ──
+                                                        if (solTipo === 'Proyectos' && solSubcat === 'Bosque Nativo') {
+                                                            return (
+                                                                apTipo === 'Proyectos' &&
+                                                                apNombre === 'Bosque Nativo > Coord. BN'
+                                                            );
+                                                        }
+
+                                                        // ── Regla F: Dirección (cualquier otro Director) ──
+                                                        if (solTipo === 'Dirección') {
+                                                            return apTipo === 'Dirección';
+                                                        }
+
+                                                        // ── Regla G: Fallback por defecto ──
+                                                        return apEst.id === solEst.id;
+                                                    });
+                                                });
+                                            });
 
                                             const estructurasNombres = solEstructurasIds
                                                 .map(id => programasProyectos.find(ep => ep.id === id))
@@ -1837,6 +2130,129 @@ export default function AdministracionPage() {
                                 {isBulkUploading ? 'Cargando...' : `Confirmar y Cargar ${bulkRows.length} Usuario(s)`}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Confirm Modal */}
+            {confirmState.isOpen && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: '20px' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '440px', backgroundColor: 'var(--background)', display: 'flex', flexDirection: 'column', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+                            <AlertTriangle size={22} color="#f59e0b" />
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: 'var(--foreground)' }}>
+                                {confirmState.title}
+                            </h3>
+                        </div>
+                        <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: 'var(--muted-foreground)', lineHeight: '1.5' }}>
+                            {confirmState.message}
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                            <button
+                                onClick={() => {
+                                    confirmState.resolve?.(false);
+                                    setConfirmState({ isOpen: false, title: '', message: '', resolve: null });
+                                }}
+                                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontWeight: '600', color: 'var(--foreground)', fontSize: '13px' }}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={() => {
+                                    confirmState.resolve?.(true);
+                                    setConfirmState({ isOpen: false, title: '', message: '', resolve: null });
+                                }}
+                                style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
+                            >
+                                Aceptar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Bulk Rename Modal */}
+            {showRenameModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: '20px' }}>
+                    <div className="card" style={{ width: '100%', maxWidth: '480px', backgroundColor: 'var(--background)', display: 'flex', flexDirection: 'column', padding: '24px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <Edit3 size={20} className="text-primary" /> Renombrar Jerarquías
+                            </h3>
+                            <button onClick={() => setShowRenameModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <p style={{ fontSize: '13px', color: 'var(--muted-foreground)', marginBottom: '20px', lineHeight: '1.4' }}>
+                            Actualiza el nombre de una categoría, subcategoría o cargo. Este cambio afectará a <strong>todas</strong> las estructuras operativas que lo utilicen.
+                        </p>
+                        
+                        <form onSubmit={handleBulkRename} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '6px' }}>Nivel a renombrar</label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    {[
+                                        { id: 'cat', label: 'Categoría' },
+                                        { id: 'subcat', label: 'Subcategoría' },
+                                        { id: 'cargo', label: 'Cargo / Rol' }
+                                    ].map(lvl => (
+                                        <button
+                                            key={lvl.id} type="button"
+                                            onClick={() => { setRenameLevel(lvl.id as any); setRenameCatScope(''); setRenameSubcatScope(''); setRenameOldName(''); setRenameNewName(''); }}
+                                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: renameLevel === lvl.id ? '2px solid var(--primary)' : '1px solid var(--border)', backgroundColor: renameLevel === lvl.id ? 'rgba(37,99,235,0.05)' : 'transparent', color: renameLevel === lvl.id ? 'var(--primary)' : 'var(--foreground)', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}
+                                        >{lvl.label}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Scopes dependientes del nivel */}
+                            {(renameLevel === 'subcat' || renameLevel === 'cargo') && (
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '6px' }}>Dentro de la Categoría:</label>
+                                    <select value={renameCatScope} onChange={e => { setRenameCatScope(e.target.value); setRenameSubcatScope(''); setRenameOldName(''); }} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }} required>
+                                        <option value="">-- Seleccionar Categoría --</option>
+                                        {Object.keys(dynamicHierarchy).map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {renameLevel === 'cargo' && renameCatScope && dynamicHierarchy[renameCatScope]?.subcategorias && Object.keys(dynamicHierarchy[renameCatScope].subcategorias).length > 0 && (
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '6px' }}>Dentro de la Subcategoría (Opcional):</label>
+                                    <select value={renameSubcatScope} onChange={e => { setRenameSubcatScope(e.target.value); setRenameOldName(''); }} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }}>
+                                        <option value="">-- Ninguna --</option>
+                                        {Object.keys(dynamicHierarchy[renameCatScope].subcategorias).map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Valor Actual */}
+                            <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '6px' }}>Nombre Actual</label>
+                                <select value={renameOldName} onChange={e => setRenameOldName(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '14px' }} required>
+                                    <option value="">-- Seleccionar --</option>
+                                    {renameLevel === 'cat' && Object.keys(dynamicHierarchy).map(c => <option key={c} value={c}>{c}</option>)}
+                                    {renameLevel === 'subcat' && renameCatScope && dynamicHierarchy[renameCatScope]?.subcategorias && Object.keys(dynamicHierarchy[renameCatScope].subcategorias).map(s => <option key={s} value={s}>{s}</option>)}
+                                    {renameLevel === 'cargo' && renameCatScope && (
+                                        (renameSubcatScope ? dynamicHierarchy[renameCatScope].subcategorias?.[renameSubcatScope] : dynamicHierarchy[renameCatScope].cargos) || []
+                                    ).map((c: string) => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+
+                            {/* Nuevo Valor */}
+                            <div>
+                                <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: 'var(--muted-foreground)', textTransform: 'uppercase', marginBottom: '6px' }}>Nuevo Nombre</label>
+                                <input type="text" value={renameNewName} onChange={e => setRenameNewName(e.target.value)} placeholder="Escribe el nuevo nombre..." style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid var(--primary)', fontSize: '14px', outline: 'none' }} required />
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+                                <button type="button" onClick={() => setShowRenameModal(false)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>
+                                    Cancelar
+                                </button>
+                                <button type="submit" disabled={isRenaming || !renameOldName || !renameNewName} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: 'var(--primary)', color: 'white', cursor: (isRenaming || !renameOldName || !renameNewName) ? 'not-allowed' : 'pointer', fontWeight: '700', fontSize: '13px' }}>
+                                    {isRenaming ? 'Guardando...' : 'Aplicar Cambios'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
