@@ -291,7 +291,7 @@ export default function DesembolsosPage() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', marginBottom: '32px' }}>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <label style={{ fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <Calendar size={14} /> Fecha de Transferencia
                                 </label>
                                 <input
@@ -311,7 +311,7 @@ export default function DesembolsosPage() {
                                 />
                             </div>
                             <div>
-                                <label style={{ display: 'block', fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <label style={{ fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <Hash size={14} /> Número de Comprobante / ID Operación
                                 </label>
                                 <input

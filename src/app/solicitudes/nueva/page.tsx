@@ -50,11 +50,20 @@ export default function NuevaSolicitudPage() {
     const [aprobadorPrincipal, setAprobadorPrincipal] = useState<string>("");
     const [aprobadorSuplente, setAprobadorSuplente] = useState<string>("");
     const [suplenteSeleccionado, setSuplenteSeleccionado] = useState<string>("");
+    const [aprobadorSeleccionado, setAprobadorSeleccionado] = useState<string>("");
 
     // Inicialización y carga de sesión
     useEffect(() => {
         if (user && user.profile) {
             setIsSolicitante(user.profile.es_solicitante === true || user.email === 'nzapata@fundaec.org');
+            
+            // Auto-cargar datos desde el perfil
+            if (user.profile.cargo) setCargo(user.profile.cargo);
+            if (user.profile.cedula) setNumDocumento(user.profile.cedula);
+            if (user.profile.telefono) setContacto(user.profile.telefono);
+            if (user.profile.banco) setBanco(user.profile.banco);
+            if (user.profile.tipo_cuenta) setTipoCuenta(user.profile.tipo_cuenta);
+            if (user.profile.numero_cuenta) setNumCuenta(user.profile.numero_cuenta);
         }
     }, [user]);
 
@@ -74,6 +83,7 @@ export default function NuevaSolicitudPage() {
             setAprobadorPrincipal("");
             setAprobadorSuplente("");
             setSuplenteSeleccionado("");
+            setAprobadorSeleccionado("");
             return;
         }
         const fetchAprobadores = async () => {
@@ -82,9 +92,12 @@ export default function NuevaSolicitudPage() {
                 .select('aprobador_email, aprobador_suplente_email')
                 .eq('email', user.email)
                 .single();
-            setAprobadorPrincipal(data?.aprobador_email || "");
-            setAprobadorSuplente(data?.aprobador_suplente_email || "");
+            const principal = data?.aprobador_email || "";
+            const suplente = data?.aprobador_suplente_email || "";
+            setAprobadorPrincipal(principal);
+            setAprobadorSuplente(suplente);
             setSuplenteSeleccionado(""); // reset al cambiar proyecto
+            setAprobadorSeleccionado(principal); // por defecto el aprobador principal
         };
         fetchAprobadores();
     }, [proyecto, user]);
@@ -146,9 +159,16 @@ export default function NuevaSolicitudPage() {
     const handleFillDummyData = () => {
         setNumDocumento("1020304050");
         setTipoDocumento("CC");
-        setCargo("Coordinador de Proyecto");
-        if (proyectosList.length > 0) {
-            setProyecto(proyectosList[0].id);
+        if (user?.email === 'nzapata@fundaec.org') {
+            setCargo("Director Administrativo y Financiero");
+        } else {
+            setCargo("Coordinador de Proyecto");
+        }
+        
+        // Buscar el primer elemento que sea un Programa, Proyecto, Área o Dirección
+        const primerValido = proyectosList.find(p => ["Programas", "Proyectos", "Área", "Dirección"].includes(p.tipo));
+        if (primerValido) {
+            setProyecto(primerValido.id);
         } else {
             setProyecto("");
         }
@@ -173,7 +193,7 @@ export default function NuevaSolicitudPage() {
     const validateForm = () => {
         if (!numDocumento.trim()) return "Número de documento requerido";
         if (!contacto.trim()) return "Número de contacto requerido";
-        if (!proyecto) return "Selecciona un proyecto/programa";
+        if (!proyecto) return "Selecciona un programa, proyecto, área o dirección";
         if (!concepto.trim()) return "Concepto del anticipo requerido";
         if (!banco) return "Selecciona una entidad bancaria";
         if (!numCuenta.trim()) return "Número de cuenta requerido";
@@ -223,7 +243,8 @@ export default function NuevaSolicitudPage() {
             numero_documento: numDocumento,
             cargo: cargo,
             proyecto: proyectosList.find(p => p.id === proyecto)?.nombre || proyecto,
-            contacto: contacto
+            contacto: contacto,
+            aprobador_email: aprobadorSeleccionado || null
         };
 
         console.log("Datos a enviar:", payload);
@@ -279,7 +300,8 @@ export default function NuevaSolicitudPage() {
                                 tipo_cuenta: tipoCuenta,
                                 numero_cuenta: numCuenta
                             },
-                            items: gastos
+                            items: gastos,
+                            aprobador_email: aprobadorSeleccionado || undefined
                         });
                     } catch (emailErr) {
                         console.error("No se pudo enviar el correo:", emailErr);
@@ -431,47 +453,79 @@ export default function NuevaSolicitudPage() {
                         </div>
 
                         <div>
-                            <label className="form-label">Proyecto / Programa <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <label className="form-label">Programa / Proyecto / Área <span style={{ color: 'var(--destructive)' }}>*</span></label>
                             <select className="form-input" value={proyecto} onChange={e => setProyecto(e.target.value)}>
                                 <option value="">— Seleccione —</option>
-                                {proyectosList.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                                {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
+                                    <optgroup label="Direcciones">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Dirección")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
+                                {proyectosList.filter(p => p.tipo === "Programas").length > 0 && (
+                                    <optgroup label="Programas">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Programas")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
+                                {proyectosList.filter(p => p.tipo === "Proyectos").length > 0 && (
+                                    <optgroup label="Proyectos">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Proyectos")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
+                                {proyectosList.filter(p => p.tipo === "Área").length > 0 && (
+                                    <optgroup label="Áreas">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Área")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
                             </select>
                         </div>
 
-                        {/* Aprobador Principal (read-only) */}
-                        {aprobadorPrincipal && (
+                        {/* Selector de Aprobador */}
+                        {(aprobadorPrincipal || aprobadorSuplente) ? (
                             <div>
                                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <UserCheck size={14} color="#16a34a" /> Aprobador Principal
-                                </label>
-                                <input
-                                    type="text"
-                                    className="form-input"
-                                    value={aprobadorPrincipal}
-                                    readOnly
-                                    style={{ backgroundColor: '#f0fdf4', color: '#16a34a', fontWeight: '600', border: '1px solid #bbf7d0' }}
-                                />
-                            </div>
-                        )}
-
-                        {/* Aprobador Suplente (dropdown si existe) */}
-                        {aprobadorSuplente && (
-                            <div>
-                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <UserCheck size={14} color="#2563eb" /> Aprobador Suplente
-                                    <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: '400' }}>(Opcional — se usa si el principal no está disponible)</span>
+                                    <UserCheck size={14} color="var(--primary)" /> Aprobador Asignado <span style={{ color: 'var(--destructive)' }}>*</span>
+                                    <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: '400' }}>(Selecciona quién debe aprobar esta solicitud)</span>
                                 </label>
                                 <select
                                     className="form-input"
-                                    value={suplenteSeleccionado}
-                                    onChange={e => setSuplenteSeleccionado(e.target.value)}
-                                    style={{ borderColor: '#bfdbfe' }}
+                                    value={aprobadorSeleccionado}
+                                    onChange={e => setAprobadorSeleccionado(e.target.value)}
+                                    style={{ borderColor: 'var(--border)' }}
+                                    required
                                 >
-                                    <option value="">— Usar aprobador principal —</option>
-                                    <option value={aprobadorSuplente}>{aprobadorSuplente}</option>
+                                    {aprobadorPrincipal && (
+                                        <option value={aprobadorPrincipal}>
+                                            {aprobadorPrincipal} (Principal)
+                                        </option>
+                                    )}
+                                    {aprobadorSuplente && (
+                                        <option value={aprobadorSuplente}>
+                                            {aprobadorSuplente} (Suplente)
+                                        </option>
+                                    )}
                                 </select>
                             </div>
-                        )}
+                        ) : proyecto ? (
+                            <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', fontSize: '13px' }}>
+                                <span>⚠️ No tienes aprobadores asignados para tu estructura. Contacta al administrador.</span>
+                            </div>
+                        ) : null}
 
                         <div>
                             <label className="form-label">Correo electrónico</label>

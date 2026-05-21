@@ -17,6 +17,7 @@ interface EmailData {
         numero_cuenta: string;
     };
     items: any[];
+    aprobador_email?: string;
 }
 
 export async function sendAnticipoNotification(data: EmailData) {
@@ -26,7 +27,7 @@ export async function sendAnticipoNotification(data: EmailData) {
     }
 
     try {
-        const { id, solicitante_nombre, solicitante_email, motivo, monto_total, monto_letras, banco_info, items } = data;
+        const { id, solicitante_nombre, solicitante_email, motivo, monto_total, monto_letras, banco_info, items, aprobador_email } = data;
 
         const html = `
             <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; borderRadius: 12px; color: #1e293b;">
@@ -42,6 +43,7 @@ export async function sendAnticipoNotification(data: EmailData) {
                     <p><strong>Motivo:</strong> ${motivo}</p>
                     <p><strong>Monto Total:</strong> $${monto_total.toLocaleString('es-CO')}</p>
                     <p style="font-style: italic; font-size: 14px; color: #64748b;">(${monto_letras})</p>
+                    ${aprobador_email ? `<p><strong>Aprobador Asignado:</strong> ${aprobador_email}</p>` : ''}
                 </div>
 
                 <div style="margin-bottom: 24px;">
@@ -80,9 +82,14 @@ export async function sendAnticipoNotification(data: EmailData) {
             </div>
         `;
 
+        const recipients = [solicitante_email];
+        if (aprobador_email) {
+            recipients.push(aprobador_email);
+        }
+
         const { data: resData, error: resError } = await resend.emails.send({
             from: 'FUNDAEC Anticipos <onboarding@resend.dev>', // Usando el dominio de prueba de Resend
-            to: [solicitante_email],
+            to: recipients,
             subject: `Confirmación de Solicitud: ${motivo.slice(0, 30)}${motivo.length > 30 ? '...' : ''}`,
             html: html,
         });

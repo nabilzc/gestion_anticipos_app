@@ -15,8 +15,8 @@
   --accent-foreground: #2563eb;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #f1f5f9;
-  --input: #f1f5f9;
+  --border: #cbd5e1;
+  --input: #cbd5e1;
   --ring: #2563eb;
   --radius: 12px;
 
@@ -216,7 +216,45 @@ button {
   color: var(--foreground);
   font-size: 14px;
   outline: none;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 .form-input[readonly] {
   background-color: var(--muted);
+}
+
+/* Estilos de alto contraste y estados interactivos para inputs, selects y textareas */
+.form-input,
+input[type="text"]:not([readonly]),
+input[type="number"],
+input[type="date"],
+input[type="tel"],
+input[type="email"],
+select,
+textarea {
+  border: 1px solid var(--border) !important;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out !important;
+}
+
+.form-input:not([readonly]):hover,
+input[type="text"]:not([readonly]):hover,
+input[type="number"]:hover,
+input[type="date"]:hover,
+input[type="tel"]:hover,
+input[type="email"]:hover,
+select:hover,
+textarea:hover {
+  border-color: #94a3b8 !important;
+}
+
+.form-input:not([readonly]):focus,
+input[type="text"]:not([readonly]):focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="tel"]:focus,
+input[type="email"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  outline: none !important;
 }

@@ -37,7 +37,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (isNabil) {
                     setUser({
                         ...session.user,
-                        profile: { role: 'Administrador Global', es_solicitante: true, es_aprobador: true }
+                        profile: { 
+                            role: 'Administrador Global', 
+                            es_solicitante: true, 
+                            es_aprobador: true,
+                            cargo: 'Director Administrativo y Financiero'
+                        }
                     });
                     setLoading(false);
                     return;
