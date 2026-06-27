@@ -52,20 +52,103 @@ export default function NuevaSolicitudPage() {
     const [suplenteSeleccionado, setSuplenteSeleccionado] = useState<string>("");
     const [aprobadorSeleccionado, setAprobadorSeleccionado] = useState<string>("");
 
-    // Inicialización y carga de sesión
+    // Estados para simulación de solicitante (Modo de Pruebas)
+    const [solicitantesList, setSolicitantesList] = useState<any[]>([]);
+    const [simulatedUser, setSimulatedUser] = useState<any | null>(null);
+
+    // Obtener solicitante activo (simulado o el autenticado)
+    const solicitanteActivoProfile = simulatedUser || user?.profile;
+    const solicitanteActivoEmail = simulatedUser ? simulatedUser.email : user?.email;
+    const solicitanteActivoNombre = simulatedUser ? simulatedUser.full_name : (user?.user_metadata?.full_name || user?.email || "Usuario");
+    const solicitanteActivoId = simulatedUser ? simulatedUser.id : user?.id;
+
+    // Inicialización y carga de sesión (permisos reales)
     useEffect(() => {
         if (user && user.profile) {
             setIsSolicitante(user.profile.es_solicitante === true || user.email === 'nzapata@fundaec.org');
-            
-            // Auto-cargar datos desde el perfil
-            if (user.profile.cargo) setCargo(user.profile.cargo);
-            if (user.profile.cedula) setNumDocumento(user.profile.cedula);
-            if (user.profile.telefono) setContacto(user.profile.telefono);
-            if (user.profile.banco) setBanco(user.profile.banco);
-            if (user.profile.tipo_cuenta) setTipoCuenta(user.profile.tipo_cuenta);
-            if (user.profile.numero_cuenta) setNumCuenta(user.profile.numero_cuenta);
         }
     }, [user]);
+
+    // Carga de perfiles para la simulación (combinando autorizados y perfiles reales)
+    useEffect(() => {
+        if (!user) return;
+        const fetchSolicitantes = async () => {
+            const { data: authData, error: authError } = await supabase
+                .from('perfiles_autorizados')
+                .select('*')
+                .eq('es_solicitante', true);
+
+            const { data: profilesData, error: profilesError } = await supabase
+                .from('profiles')
+                .select('*');
+
+            if (authError) console.error("Error fetching perfiles_autorizados:", authError);
+            if (profilesError) console.error("Error fetching profiles:", profilesError);
+
+            if (authData) {
+                const combinedList = authData.map(auth => {
+                    const realProfile = profilesData?.find(p => p.email?.toLowerCase() === auth.email?.toLowerCase());
+                    return {
+                        id: realProfile?.id || `auth-${auth.email}`,
+                        email: auth.email,
+                        full_name: auth.nombre_completo || realProfile?.full_name || auth.email,
+                        cargo: realProfile?.cargo || "",
+                        cedula: realProfile?.cedula || "",
+                        telefono: realProfile?.telefono || "",
+                        banco: realProfile?.banco || "",
+                        tipo_cuenta: realProfile?.tipo_cuenta || "Ahorros",
+                        numero_cuenta: realProfile?.numero_cuenta || "",
+                    };
+                }).sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+                setSolicitantesList(combinedList);
+            }
+        };
+        fetchSolicitantes();
+    }, [user]);
+
+    // Auto-cargar datos desde el perfil del solicitante activo
+    useEffect(() => {
+        if (solicitanteActivoProfile) {
+            setCargo(solicitanteActivoProfile.cargo || "");
+            setNumDocumento(solicitanteActivoProfile.cedula || "");
+            setContacto(solicitanteActivoProfile.telefono || "");
+            setBanco(solicitanteActivoProfile.banco || "");
+            setTipoCuenta(solicitanteActivoProfile.tipo_cuenta || "Ahorros");
+            setNumCuenta(solicitanteActivoProfile.numero_cuenta || "");
+        } else {
+            setCargo("");
+            setNumDocumento("");
+            setContacto("");
+            setBanco("");
+            setTipoCuenta("Ahorros");
+            setNumCuenta("");
+        }
+    }, [solicitanteActivoProfile]);
+
+    // Auto-seleccionar proyecto del solicitante activo según su perfil autorizado
+    useEffect(() => {
+        if (!solicitanteActivoEmail) return;
+        const fetchUserProject = async () => {
+            const { data } = await supabase
+                .from('perfiles_autorizados')
+                .select('id_programa_area, ids_programa_area')
+                .eq('email', solicitanteActivoEmail)
+                .single();
+            if (data) {
+                const targetProjId = data.id_programa_area || 
+                    (data.ids_programa_area && data.ids_programa_area.length > 0 ? data.ids_programa_area[0] : null);
+                if (targetProjId) {
+                    setProyecto(targetProjId);
+                } else {
+                    setProyecto("");
+                }
+            } else {
+                setProyecto("");
+            }
+        };
+        fetchUserProject();
+    }, [solicitanteActivoEmail]);
 
     useEffect(() => {
         if (!user) return;
@@ -77,9 +160,9 @@ export default function NuevaSolicitudPage() {
         fetchMaestroData();
     }, [user]);
 
-    // Auto-carga de aprobadores (principal y suplente) cuando se selecciona un proyecto
+    // Auto-carga de aprobadores (principal y suplente) cuando cambia el solicitante o el proyecto
     useEffect(() => {
-        if (!user?.email || !proyecto) {
+        if (!solicitanteActivoEmail || !proyecto) {
             setAprobadorPrincipal("");
             setAprobadorSuplente("");
             setSuplenteSeleccionado("");
@@ -90,7 +173,7 @@ export default function NuevaSolicitudPage() {
             const { data } = await supabase
                 .from('perfiles_autorizados')
                 .select('aprobador_email, aprobador_suplente_email')
-                .eq('email', user.email)
+                .eq('email', solicitanteActivoEmail)
                 .single();
             const principal = data?.aprobador_email || "";
             const suplente = data?.aprobador_suplente_email || "";
@@ -100,7 +183,7 @@ export default function NuevaSolicitudPage() {
             setAprobadorSeleccionado(principal); // por defecto el aprobador principal
         };
         fetchAprobadores();
-    }, [proyecto, user]);
+    }, [proyecto, solicitanteActivoEmail]);
 
     // Inicialización y carga de sesión
     useEffect(() => {
@@ -226,7 +309,7 @@ export default function NuevaSolicitudPage() {
         const loadingToast = toast.loading(estado === 'Enviado' ? 'Enviando solicitud...' : 'Guardando borrador...');
 
         const payload = {
-            solicitante_id: user.id,
+            solicitante_id: (solicitanteActivoId && String(solicitanteActivoId).startsWith('auth-')) ? null : (solicitanteActivoId || null),
             status: estado,
             motivo: concepto,
             monto_total: totalAnticipo,
@@ -290,8 +373,8 @@ export default function NuevaSolicitudPage() {
                     try {
                         await sendAnticipoNotification({
                             id: anticipoId,
-                            solicitante_nombre: user.user_metadata?.full_name || user.email || "Usuario",
-                            solicitante_email: user.email || "",
+                            solicitante_nombre: solicitanteActivoNombre,
+                            solicitante_email: solicitanteActivoEmail || "",
                             motivo: concepto,
                             monto_total: totalAnticipo,
                             monto_letras: numeroALetras(totalAnticipo),
@@ -427,10 +510,57 @@ export default function NuevaSolicitudPage() {
                         <h3 className="form-section-title">Información del solicitante</h3>
                     </div>
 
+                    {/* Selector de Simulación (Modo Experimental) */}
+                    <div style={{
+                        padding: '16px',
+                        backgroundColor: '#f8fafc',
+                        border: '1px dashed #cbd5e1',
+                        borderRadius: '8px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '16px' }}>🧪</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#334155' }}>
+                                Modo de Pruebas: Simular Solicitante
+                            </span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                            Puedes seleccionar otro solicitante de la base de datos para probar cómo se auto-completan sus datos, cargos, proyectos y aprobadores.
+                        </p>
+                        <select
+                            className="form-input"
+                            value={simulatedUser ? simulatedUser.id : ""}
+                            onChange={(e) => {
+                                const selectedId = e.target.value;
+                                if (!selectedId) {
+                                    setSimulatedUser(null);
+                                    toast.success("Restaurado a tu perfil real");
+                                } else {
+                                    const selected = solicitantesList.find(p => p.id === selectedId);
+                                    if (selected) {
+                                        setSimulatedUser(selected);
+                                        toast.success(`Simulando a: ${selected.full_name}`);
+                                    }
+                                }
+                            }}
+                            style={{ maxWidth: '400px', backgroundColor: 'white' }}
+                        >
+                            <option value="">— Usar mi usuario autenticado ({user?.user_metadata?.full_name || user?.email}) —</option>
+                            {solicitantesList.map(profile => (
+                                <option key={profile.id} value={profile.id}>
+                                    {profile.full_name} ({profile.email})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
                     <div className="form-grid-auto">
                         <div>
                             <label className="form-label">Nombre completo <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="text" className="form-input" value={user?.user_metadata?.full_name || 'Desconocido'} readOnly />
+                            <input type="text" className="form-input" value={solicitanteActivoNombre} readOnly />
                         </div>
 
                         <div>
@@ -529,7 +659,7 @@ export default function NuevaSolicitudPage() {
 
                         <div>
                             <label className="form-label">Correo electrónico</label>
-                            <input type="email" className="form-input" value={user?.email || ''} readOnly />
+                            <input type="email" className="form-input" value={solicitanteActivoEmail || ''} readOnly />
                         </div>
 
                         <div>
