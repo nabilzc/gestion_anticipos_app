@@ -98,6 +98,8 @@ export default function NuevaSolicitudPage() {
                         banco: realProfile?.banco || "",
                         tipo_cuenta: realProfile?.tipo_cuenta || "Ahorros",
                         numero_cuenta: realProfile?.numero_cuenta || "",
+                        id_programa_area: auth.id_programa_area || null,
+                        ids_programa_area: auth.ids_programa_area || []
                     };
                 }).sort((a, b) => a.full_name.localeCompare(b.full_name));
 
@@ -110,12 +112,33 @@ export default function NuevaSolicitudPage() {
     // Auto-cargar datos desde el perfil del solicitante activo
     useEffect(() => {
         if (solicitanteActivoProfile) {
-            setCargo(solicitanteActivoProfile.cargo || "");
             setNumDocumento(solicitanteActivoProfile.cedula || "");
             setContacto(solicitanteActivoProfile.telefono || "");
             setBanco(solicitanteActivoProfile.banco || "");
             setTipoCuenta(solicitanteActivoProfile.tipo_cuenta || "Ahorros");
             setNumCuenta(solicitanteActivoProfile.numero_cuenta || "");
+
+            // Auto-seleccionar programa/proyecto/área
+            const targetProjId = solicitanteActivoProfile.id_programa_area || 
+                (solicitanteActivoProfile.ids_programa_area && solicitanteActivoProfile.ids_programa_area.length > 0 
+                    ? solicitanteActivoProfile.ids_programa_area[0] 
+                    : null);
+            if (targetProjId) {
+                setProyecto(targetProjId);
+            } else {
+                setProyecto("");
+            }
+
+            // Auto-cargar cargo (si no tiene cargo explícito en el perfil, intentar extraerlo de la estructura asignada)
+            let cargoFinal = solicitanteActivoProfile.cargo || "";
+            if (!cargoFinal && targetProjId && proyectosList.length > 0) {
+                const matchedProj = proyectosList.find(p => p.id === targetProjId);
+                if (matchedProj && matchedProj.nombre) {
+                    const parts = matchedProj.nombre.split(" > ");
+                    cargoFinal = parts[parts.length - 1]; // Toma la última parte como el cargo
+                }
+            }
+            setCargo(cargoFinal);
         } else {
             setCargo("");
             setNumDocumento("");
@@ -123,32 +146,12 @@ export default function NuevaSolicitudPage() {
             setBanco("");
             setTipoCuenta("Ahorros");
             setNumCuenta("");
+            setProyecto("");
         }
-    }, [solicitanteActivoProfile]);
+    }, [solicitanteActivoProfile, proyectosList]);
 
-    // Auto-seleccionar proyecto del solicitante activo según su perfil autorizado
-    useEffect(() => {
-        if (!solicitanteActivoEmail) return;
-        const fetchUserProject = async () => {
-            const { data } = await supabase
-                .from('perfiles_autorizados')
-                .select('id_programa_area, ids_programa_area')
-                .eq('email', solicitanteActivoEmail)
-                .single();
-            if (data) {
-                const targetProjId = data.id_programa_area || 
-                    (data.ids_programa_area && data.ids_programa_area.length > 0 ? data.ids_programa_area[0] : null);
-                if (targetProjId) {
-                    setProyecto(targetProjId);
-                } else {
-                    setProyecto("");
-                }
-            } else {
-                setProyecto("");
-            }
-        };
-        fetchUserProject();
-    }, [solicitanteActivoEmail]);
+    // Se removió el fetchUserProject redundante ya que el proyecto ahora se auto-selecciona directamente
+    // al cargar el perfil activo (solicitanteActivoProfile) que ya contiene id_programa_area y ids_programa_area.
 
     useEffect(() => {
         if (!user) return;
@@ -195,8 +198,14 @@ export default function NuevaSolicitudPage() {
         });
         setFecha(today);
 
-        // Try to restore from a previously stored local context if needed
-        // In the future this could query the last record from Supabase for this user
+        // Corregir base de datos (añadir aprobador_email si falta y recargar schema cache de Supabase)
+        import("@/app/actions/fixDatabase").then(({ runDatabaseFix }) => {
+            runDatabaseFix().then(res => {
+                console.log("Database Fix applied:", res);
+            });
+        }).catch(err => {
+            console.error("Error invoking database fix:", err);
+        });
     }, []);
 
     const totalAnticipo = gastos.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
@@ -242,18 +251,24 @@ export default function NuevaSolicitudPage() {
     const handleFillDummyData = () => {
         setNumDocumento("1020304050");
         setTipoDocumento("CC");
-        if (user?.email === 'nzapata@fundaec.org') {
-            setCargo("Director Administrativo y Financiero");
-        } else {
-            setCargo("Coordinador de Proyecto");
+        // Conservar el cargo si ya está definido
+        if (!cargo) {
+            if (user?.email === 'nzapata@fundaec.org') {
+                setCargo("Director Administrativo y Financiero");
+            } else {
+                setCargo("Coordinador de Proyecto");
+            }
         }
         
-        // Buscar el primer elemento que sea un Programa, Proyecto, Área o Dirección
-        const primerValido = proyectosList.find(p => ["Programas", "Proyectos", "Área", "Dirección"].includes(p.tipo));
-        if (primerValido) {
-            setProyecto(primerValido.id);
-        } else {
-            setProyecto("");
+        // Conservar el programa/proyecto/área si ya está seleccionado
+        if (!proyecto) {
+            // Buscar el primer elemento que sea un Programa, Proyecto, Área o Dirección
+            const primerValido = proyectosList.find(p => ["Programas", "Proyectos", "Área", "Dirección"].includes(p.tipo));
+            if (primerValido) {
+                setProyecto(primerValido.id);
+            } else {
+                setProyecto("");
+            }
         }
         setContacto("3001234567");
         setConcepto("Gastos de viaje para capacitación técnica en zona rural");

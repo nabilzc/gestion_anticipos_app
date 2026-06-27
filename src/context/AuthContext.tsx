@@ -75,7 +75,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 role: calculatedRole,
                                 programa: authProfile.programas_proyectos_areas?.nombre || profile.programa,
                                 es_solicitante: authProfile.es_solicitante || false,
-                                es_aprobador: authProfile.es_aprobador || false
+                                es_aprobador: authProfile.es_aprobador || false,
+                                id_programa_area: authProfile.id_programa_area || null,
+                                ids_programa_area: authProfile.ids_programa_area || []
                             };
 
                             // Actualizar la tabla profiles con los nuevos permisos si hubo cambios
@@ -115,7 +117,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 role: calculatedRole,
                                 programa: authProfile.programas_proyectos_areas?.nombre || null,
                                 es_solicitante: authProfile.es_solicitante || false,
-                                es_aprobador: authProfile.es_aprobador || false
+                                es_aprobador: authProfile.es_aprobador || false,
+                                id_programa_area: authProfile.id_programa_area || null,
+                                ids_programa_area: authProfile.ids_programa_area || []
                             };
 
                             const { data: createdProfile } = await supabase.from('profiles').insert([newProfile]).select().single();
