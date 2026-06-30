@@ -270,8 +270,10 @@ export default function NuevaSolicitudPage() {
             const primerValido = proyectosList.find(p => ["Programas", "Proyectos", "Área", "Dirección"].includes(p.tipo));
             if (primerValido) {
                 setProyecto(primerValido.id);
+                setSolicitanteProyecto(primerValido.id);
             } else {
                 setProyecto("");
+                setSolicitanteProyecto("");
             }
         }
         setContacto("3001234567");
@@ -603,14 +605,14 @@ export default function NuevaSolicitudPage() {
 
                         <div>
                             <label className="form-label">Programa / Proyecto / Área <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <select className="form-input" value={solicitanteProyecto} onChange={e => setSolicitanteProyecto(e.target.value)}>
+                            <select className="form-input" value={solicitanteProyecto !== null && solicitanteProyecto !== undefined ? String(solicitanteProyecto) : ""} onChange={e => setSolicitanteProyecto(e.target.value)}>
                                 <option value="">— Seleccione —</option>
                                 {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
                                     <optgroup label="Direcciones">
                                         {[...proyectosList]
                                             .filter(p => p.tipo === "Dirección")
                                             .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                         }
                                     </optgroup>
                                 )}
@@ -619,7 +621,7 @@ export default function NuevaSolicitudPage() {
                                         {[...proyectosList]
                                             .filter(p => p.tipo === "Programas")
                                             .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                         }
                                     </optgroup>
                                 )}
@@ -628,7 +630,7 @@ export default function NuevaSolicitudPage() {
                                         {[...proyectosList]
                                             .filter(p => p.tipo === "Proyectos")
                                             .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                         }
                                     </optgroup>
                                 )}
@@ -637,7 +639,7 @@ export default function NuevaSolicitudPage() {
                                         {[...proyectosList]
                                             .filter(p => p.tipo === "Área")
                                             .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                            .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                         }
                                     </optgroup>
                                 )}
@@ -698,14 +700,14 @@ export default function NuevaSolicitudPage() {
 
                     <div style={{ marginBottom: '20px' }}>
                         <label className="form-label">Programa / Proyecto / Área al que se cargará el gasto <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                        <select className="form-input" value={proyecto} onChange={e => setProyecto(e.target.value)} style={{ width: '100%' }}>
+                        <select className="form-input" value={proyecto !== null && proyecto !== undefined ? String(proyecto) : ""} onChange={e => setProyecto(e.target.value)} style={{ width: '100%' }}>
                             <option value="">— Seleccione —</option>
                             {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
                                 <optgroup label="Direcciones">
                                     {[...proyectosList]
                                         .filter(p => p.tipo === "Dirección")
                                         .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                     }
                                 </optgroup>
                             )}
@@ -714,7 +716,7 @@ export default function NuevaSolicitudPage() {
                                     {[...proyectosList]
                                         .filter(p => p.tipo === "Programas")
                                         .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                     }
                                 </optgroup>
                             )}
@@ -723,7 +725,7 @@ export default function NuevaSolicitudPage() {
                                     {[...proyectosList]
                                         .filter(p => p.tipo === "Proyectos")
                                         .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                     }
                                 </optgroup>
                             )}
@@ -732,7 +734,7 @@ export default function NuevaSolicitudPage() {
                                     {[...proyectosList]
                                         .filter(p => p.tipo === "Área")
                                         .sort((a, b) => a.nombre.localeCompare(b.nombre))
-                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
                                     }
                                 </optgroup>
                             )}

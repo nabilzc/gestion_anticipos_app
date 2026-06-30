@@ -276,3 +276,65 @@ export async function sendLegalizationFinanceNotification(data: {
         return { success: false, error: error.message };
     }
 }
+
+export async function sendDirectLegalizationNotification(data: {
+    id: string;
+    solicitante_nombre: string;
+    solicitante_email: string;
+    motivo: string;
+    monto_total: number;
+}) {
+    if (!process.env.RESEND_API_KEY) {
+        console.error("RESEND_API_KEY is missing");
+        return { success: false, error: "Configuration error" };
+    }
+
+    const { id, solicitante_nombre, solicitante_email, motivo, monto_total } = data;
+
+    const html = `
+        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #f59e0b; margin-bottom: 8px;">Legalización Directa - Reembolso Requerido</h1>
+                <p style="color: #64748b;">Se ha registrado una legalización de gastos sin anticipo previo</p>
+            </div>
+
+            <div style="background-color: #fffbeb; padding: 24px; border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 24px;">
+                <p style="font-size: 14px; color: #92400e; margin: 0 0 12px 0; font-weight: 600;">
+                    ⚠️ Este gasto NO tiene anticipo previo. Se requiere reembolso completo.
+                </p>
+                <p style="font-size: 16px; line-height: 1.6; color: #334155; margin-bottom: 12px;">
+                    El usuario <strong>${solicitante_nombre}</strong> ha registrado una legalización directa de gastos y requiere aprobación para reembolso.
+                </p>
+                <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #fde68a; margin-bottom: 16px;">
+                    <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>ID Legalización:</strong> ${id}</p>
+                    <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Concepto:</strong> ${motivo}</p>
+                    <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Monto Total:</strong> $${monto_total.toLocaleString('es-CO')}</p>
+                    <p style="margin: 0; font-size: 14px;"><strong>Solicitante:</strong> ${solicitante_email}</p>
+                </div>
+                <p style="font-size: 14px; color: #b45309; margin: 0;">
+                    Por favor, ingresa al módulo de administración para revisar los soportes y aprobar el reembolso.
+                </p>
+            </div>
+
+            <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 40px;">
+                <p>© ${new Date().getFullYear()} FUNDAEC - Control Interno</p>
+                <p>Este es un correo automático para el equipo financiero.</p>
+            </div>
+        </div>
+    `;
+
+    try {
+        const { data: resData, error: resError } = await resend.emails.send({
+            from: 'FUNDAEC Sistemas <onboarding@resend.dev>',
+            to: ['contabilidad@fundaec.org'],
+            subject: `Legalización Directa (Sin Anticipo): ${solicitante_nombre} - $${monto_total.toLocaleString('es-CO')}`,
+            html: html,
+        });
+
+        if (resError) throw resError;
+        return { success: true, id: resData?.id };
+    } catch (error: any) {
+        console.error("Direct Legalization Email Error:", error);
+        return { success: false, error: error.message };
+    }
+}
