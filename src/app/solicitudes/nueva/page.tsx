@@ -28,6 +28,7 @@ export default function NuevaSolicitudPage() {
     const [numDocumento, setNumDocumento] = useState("");
     const [cargo, setCargo] = useState("");
     const [proyecto, setProyecto] = useState("");
+    const [solicitanteProyecto, setSolicitanteProyecto] = useState("");
     const [contacto, setContacto] = useState("");
 
     const [concepto, setConcepto] = useState("");
@@ -125,8 +126,10 @@ export default function NuevaSolicitudPage() {
                     : null);
             if (targetProjId) {
                 setProyecto(targetProjId);
+                setSolicitanteProyecto(targetProjId);
             } else {
                 setProyecto("");
+                setSolicitanteProyecto("");
             }
 
             // Auto-cargar cargo (si no tiene cargo explícito en el perfil, intentar extraerlo de la estructura asignada)
@@ -147,6 +150,7 @@ export default function NuevaSolicitudPage() {
             setTipoCuenta("Ahorros");
             setNumCuenta("");
             setProyecto("");
+            setSolicitanteProyecto("");
         }
     }, [solicitanteActivoProfile, proyectosList]);
 
@@ -273,8 +277,8 @@ export default function NuevaSolicitudPage() {
         setContacto("3001234567");
         setConcepto("Gastos de viaje para capacitación técnica en zona rural");
         setGastos([
-            { id: "1", tipoGasto: "Viáticos", codigo: "V-001", descripcion: "Alimentación (5 días)", valor: 150000 },
-            { id: "2", tipoGasto: "Transporte", codigo: "T-001", descripcion: "Bus intermunicipal ida/vuelta", valor: 85000 }
+            { id: "1", tipoGasto: "Viáticos", codigo: "", descripcion: "Alimentación (5 días)", valor: 150000 },
+            { id: "2", tipoGasto: "Transporte", codigo: "", descripcion: "Bus intermunicipal ida/vuelta", valor: 85000 }
         ]);
         setBanco("Bancolombia");
         setTipoCuenta("Ahorros");
@@ -599,7 +603,7 @@ export default function NuevaSolicitudPage() {
 
                         <div>
                             <label className="form-label">Programa / Proyecto / Área <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <select className="form-input" value={proyecto} onChange={e => setProyecto(e.target.value)}>
+                            <select className="form-input" value={solicitanteProyecto} onChange={e => setSolicitanteProyecto(e.target.value)}>
                                 <option value="">— Seleccione —</option>
                                 {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
                                     <optgroup label="Direcciones">
@@ -639,6 +643,7 @@ export default function NuevaSolicitudPage() {
                                 )}
                             </select>
                         </div>
+
 
                         {/* Selector de Aprobador */}
                         {(aprobadorPrincipal || aprobadorSuplente) ? (
@@ -691,6 +696,49 @@ export default function NuevaSolicitudPage() {
                         <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>Información del anticipo</h3>
                     </div>
 
+                    <div style={{ marginBottom: '20px' }}>
+                        <label className="form-label">Programa / Proyecto / Área al que se cargará el gasto <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                        <select className="form-input" value={proyecto} onChange={e => setProyecto(e.target.value)} style={{ width: '100%' }}>
+                            <option value="">— Seleccione —</option>
+                            {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
+                                <optgroup label="Direcciones">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Dirección")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                            {proyectosList.filter(p => p.tipo === "Programas").length > 0 && (
+                                <optgroup label="Programas">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Programas")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                            {proyectosList.filter(p => p.tipo === "Proyectos").length > 0 && (
+                                <optgroup label="Proyectos">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Proyectos")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                            {proyectosList.filter(p => p.tipo === "Área").length > 0 && (
+                                <optgroup label="Áreas">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Área")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                        </select>
+                    </div>
+
                     <div style={{ marginBottom: '24px' }}>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Por concepto de <span style={{ color: 'var(--destructive)' }}>*</span></label>
                         <textarea
@@ -707,7 +755,6 @@ export default function NuevaSolicitudPage() {
                             <thead style={{ backgroundColor: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                                 <tr>
                                     <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Tipo de gasto</th>
-                                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Código</th>
                                     <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Descripción</th>
                                     <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Valor ($)</th>
                                     <th style={{ width: '50px' }}></th>
@@ -724,15 +771,6 @@ export default function NuevaSolicitudPage() {
                                             >
                                                 {tiposGasto.map(t => <option key={t}>{t}</option>)}
                                             </select>
-                                        </td>
-                                        <td style={{ padding: '8px 16px' }}>
-                                            <input
-                                                type="text"
-                                                placeholder="Ej: V-001"
-                                                value={gasto.codigo}
-                                                onChange={e => handleGastoChange(gasto.id, 'codigo', e.target.value)}
-                                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '13px' }}
-                                            />
                                         </td>
                                         <td style={{ padding: '8px 16px' }}>
                                             <input

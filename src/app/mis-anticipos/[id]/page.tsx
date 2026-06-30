@@ -33,6 +33,8 @@ export default function DetalleAnticipoPage() {
     const [items, setItems] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [aprobadorNombre, setAprobadorNombre] = useState<string>("");
+    const [solicitanteProgramaCompleto, setSolicitanteProgramaCompleto] = useState<string>("");
 
     useEffect(() => {
         async function fetchDetalle() {
@@ -44,13 +46,66 @@ export default function DetalleAnticipoPage() {
                     .from("anticipos")
                     .select(`
                         *,
-                        profiles:solicitante_id (full_name, email, cedula, cargo)
+                        profiles:solicitante_id (full_name, email, cedula, cargo, programa)
                     `)
                     .eq("id", id)
                     .single();
 
                 if (anticipoError) throw anticipoError;
                 setAnticipo(anticipoData);
+
+                // Obtener nombre completo del aprobador
+                if (anticipoData?.aprobador_email) {
+                    const { data: profileData } = await supabase
+                        .from("profiles")
+                        .select("full_name")
+                        .eq("email", anticipoData.aprobador_email)
+                        .maybeSingle();
+                    if (profileData?.full_name) {
+                        setAprobadorNombre(profileData.full_name);
+                    } else {
+                        const { data: authData } = await supabase
+                            .from("perfiles_autorizados")
+                            .select("nombre_completo")
+                            .eq("email", anticipoData.aprobador_email)
+                            .maybeSingle();
+                        if (authData?.nombre_completo) {
+                            setAprobadorNombre(authData.nombre_completo);
+                        }
+                    }
+                }
+
+                // Obtener nombre del programa de origen completo
+                const emailToQuery = anticipoData?.profiles?.email || anticipoData?.solicitante_email;
+                if (emailToQuery) {
+                    const { data: authProfileData } = await supabase
+                        .from("perfiles_autorizados")
+                        .select("ids_programa_area, id_programa_area")
+                        .eq("email", emailToQuery)
+                        .maybeSingle();
+
+                    const ids = authProfileData?.ids_programa_area || [];
+                    if (ids.length > 0) {
+                        const { data: structuresData } = await supabase
+                            .from("programas_proyectos_areas")
+                            .select("nombre")
+                            .in("id", ids);
+                        if (structuresData && structuresData.length > 0) {
+                            const names = structuresData.map(s => s.nombre).join(", ");
+                            setSolicitanteProgramaCompleto(names);
+                        }
+                    } else if (authProfileData?.id_programa_area) {
+                        // Fallback a la columna legacy id_programa_area
+                        const { data: legacyStructure } = await supabase
+                            .from("programas_proyectos_areas")
+                            .select("nombre")
+                            .eq("id", authProfileData.id_programa_area)
+                            .maybeSingle();
+                        if (legacyStructure?.nombre) {
+                            setSolicitanteProgramaCompleto(legacyStructure.nombre);
+                        }
+                    }
+                }
 
                 // 2. Obtener items del anticipo
                 const { data: itemsData, error: itemsError } = await supabase
@@ -145,28 +200,42 @@ export default function DetalleAnticipoPage() {
             doc.setFont("helvetica", "normal");
             doc.setTextColor(110, 110, 110);
             doc.text("SOLICITANTE:", margin, currentY);
-            doc.text("CARGO:", margin + 85, currentY);
+            doc.text("CÉDULA / DOCUMENTO:", margin + 85, currentY);
             
             currentY += 5;
             doc.setFontSize(9);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(30, 30, 30);
             doc.text(`${anticipo.profiles?.full_name || "N/A"}`, margin, currentY);
-            doc.text(`${anticipo.profiles?.cargo || "N/A"}`, margin + 85, currentY);
+            doc.text(`${anticipo.tipo_documento || "CC"} - ${anticipo.numero_documento || anticipo.profiles?.cedula || "N/A"}`, margin + 85, currentY);
 
             currentY += 10;
             doc.setFontSize(8);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(110, 110, 110);
-            doc.text("PROYECTO / PROGRAMA:", margin, currentY);
-            doc.text("FECHA ESTIMADA:", margin + 85, currentY);
+            doc.text("PROGRAMA / PROYECTO / ÁREA (ORIGEN):", margin, currentY);
+            doc.text("CARGO:", margin + 85, currentY);
+
+            currentY += 5;
+            doc.setFontSize(9);
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(30, 30, 30);
+            doc.text(`${solicitanteProgramaCompleto || anticipo.profiles?.programa || "N/A"}`, margin, currentY);
+            doc.text(`${anticipo.cargo || anticipo.profiles?.cargo || "N/A"}`, margin + 85, currentY);
+
+            currentY += 10;
+            doc.setFontSize(8);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(110, 110, 110);
+            doc.text("PROYECTO / PROGRAMA (AL QUE SE CARGARÁ EL GASTO):", margin, currentY);
+            doc.text("FECHA ESTIMADA:", margin + 115, currentY);
 
             currentY += 5;
             doc.setFontSize(9);
             doc.setFont("helvetica", "bold");
             doc.setTextColor(30, 30, 30);
             doc.text(`${anticipo.proyecto || "General"}`, margin, currentY);
-            doc.text(`${formatDate(anticipo.fecha_ejecucion)}`, margin + 85, currentY);
+            doc.text(`${formatDate(anticipo.fecha_ejecucion)}`, margin + 115, currentY);
 
             currentY += 10;
             doc.setFontSize(8);
@@ -247,7 +316,7 @@ export default function DetalleAnticipoPage() {
             doc.setFont("helvetica", "bold");
             doc.text("AUTORIZADO POR", secondSignX + 35, signatureAreaY + 5, { align: "center" });
             doc.setFont("helvetica", "normal");
-            doc.text(anticipo.nombre_aprobador || "Administración / Tesorería", secondSignX + 35, signatureAreaY + 10, { align: "center" });
+            doc.text(aprobadorNombre || "Administración / Tesorería", secondSignX + 35, signatureAreaY + 10, { align: "center" });
 
             // 8. Pie de página (Centrado)
             const footerY = doc.internal.pageSize.getHeight() - 15;
@@ -397,11 +466,17 @@ export default function DetalleAnticipoPage() {
                                 </div>
                                 <div>
                                     <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Cédula / Documento</div>
-                                    <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 500 }}>{anticipo.profiles?.cedula || 'N/A'}</div>
+                                    <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 500 }}>
+                                        {anticipo.tipo_documento ? `${anticipo.tipo_documento} - ${anticipo.numero_documento}` : (anticipo.profiles?.cedula || 'N/A')}
+                                    </div>
                                 </div>
                                 <div>
                                     <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Cargo</div>
-                                    <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 500 }}>{anticipo.profiles?.cargo || 'N/A'}</div>
+                                    <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 500 }}>{anticipo.cargo || anticipo.profiles?.cargo || 'N/A'}</div>
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Programa / Proyecto / Área (Origen)</div>
+                                    <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 500 }}>{solicitanteProgramaCompleto || anticipo.profiles?.programa || 'N/A'}</div>
                                 </div>
                                 <div>
                                     <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Correo Electrónico</div>
@@ -417,7 +492,7 @@ export default function DetalleAnticipoPage() {
                             </h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                                 <div>
-                                    <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Proyecto / Programa</div>
+                                    <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '2px' }}>Proyecto / Programa (al que se cargará el gasto)</div>
                                     <div style={{ fontSize: '15px', color: '#1e293b', fontWeight: 600 }}>{anticipo.proyecto || 'General'}</div>
                                 </div>
                                 <div>
@@ -506,7 +581,7 @@ export default function DetalleAnticipoPage() {
                                     <span style={{ fontSize: '12px', color: '#cbd5e1', fontStyle: 'italic' }}>Pendiente por Aprobación</span>
                                 )}
                             </div>
-                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{anticipo.nombre_aprobador || 'Aprobador'}</div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{aprobadorNombre || 'Aprobador'}</div>
                             <div style={{ fontSize: '12px', color: '#94a3b8' }}>Firma de Autorización</div>
                         </div>
                     </div>
