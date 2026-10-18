@@ -39,8 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         ...session.user,
                         profile: { 
                             role: 'Administrador Global', 
-                            es_solicitante: true, 
+                            es_solicitante: true,
                             es_aprobador: true,
+                            es_contabilidad_finanzas: true,
                             cargo: 'Director Administrativo y Financiero'
                         }
                     });
@@ -76,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 programa: authProfile.programas_proyectos_areas?.nombre || profile.programa,
                                 es_solicitante: authProfile.es_solicitante || false,
                                 es_aprobador: authProfile.es_aprobador || false,
+                                es_contabilidad_finanzas: authProfile.es_contabilidad_finanzas || false,
                                 id_programa_area: authProfile.id_programa_area || null,
                                 ids_programa_area: authProfile.ids_programa_area || []
                             };
@@ -123,8 +125,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             };
 
                             const { data: createdProfile } = await supabase.from('profiles').insert([newProfile]).select().single();
-                            
-                            setUser({ ...session.user, profile: createdProfile || newProfile });
+
+                            // es_contabilidad_finanzas vive solo en perfiles_autorizados, no en profiles
+                            setUser({
+                                ...session.user,
+                                profile: { ...(createdProfile || newProfile), es_contabilidad_finanzas: authProfile.es_contabilidad_finanzas || false }
+                            });
                             setLoading(false);
                         } else {
                             await supabase.auth.signOut();

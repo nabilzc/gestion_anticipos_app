@@ -13,11 +13,13 @@ import {
     ArrowLeftRight,
     Loader2,
     Calendar,
-    Hash
+    Hash,
+    AlertCircle
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { formatCurrency, formatDate } from "@/lib/utils/businessLogic";
 import { sendDisbursementNotification } from "@/app/actions/sendEmail";
+import { getPermisos } from "@/lib/permissions";
 
 export default function DesembolsosPage() {
     const { user } = useAuth();
@@ -54,8 +56,10 @@ export default function DesembolsosPage() {
         }
     };
 
+    const permisos = getPermisos(user);
+
     useEffect(() => {
-        if (user) {
+        if (user && permisos.esContabilidadFinanzas) {
             fetchAprobados();
         }
     }, [user]);
@@ -120,6 +124,18 @@ export default function DesembolsosPage() {
         (a.profiles?.full_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (a.id || "").toString().includes(searchTerm)
     );
+
+    if (!permisos.esContabilidadFinanzas) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: '16px' }} />
+                <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Acceso Restringido</h1>
+                <p style={{ color: 'var(--muted-foreground)', maxWidth: '400px', marginTop: '8px' }}>
+                    Esta sección es exclusiva del equipo de Contabilidad y Finanzas.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '1100px', margin: '0 auto', paddingBottom: '40px' }}>
