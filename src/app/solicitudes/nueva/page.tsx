@@ -201,15 +201,6 @@ export default function NuevaSolicitudPage() {
             year: "numeric"
         });
         setFecha(today);
-
-        // Corregir base de datos (añadir aprobador_email si falta y recargar schema cache de Supabase)
-        import("@/app/actions/fixDatabase").then(({ runDatabaseFix }) => {
-            runDatabaseFix().then(res => {
-                console.log("Database Fix applied:", res);
-            });
-        }).catch(err => {
-            console.error("Error invoking database fix:", err);
-        });
     }, []);
 
     const totalAnticipo = gastos.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
