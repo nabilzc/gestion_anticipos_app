@@ -1,15 +1,17 @@
 # Plan de Trabajo Maestro - FUNDAEC Gestión de Anticipos
 
 ## SECCIÓN 1: ESTADO DEL PROYECTO
-- **Porcentaje de completitud general:** ~85% (Módulos core de solicitud, aprobación, desembolso y administración completados).
+- **Porcentaje de completitud general:** ~90%. El ciclo completo (solicitud → aprobación → desembolso → legalización → revisión del aprobador → cierre por Contabilidad y Finanzas) está construido. Falta probarlo con varios usuarios y endurecer la seguridad de la base.
 - **Fase actual vs fases siguientes:** 
-  - *Actual:* El enfoque actual vuelve a ser la carga y validación de los soportes de legalización.
-  - *Siguiente:* Finalización del flujo de legalización y conciliación financiera.
+  - *Actual:* Pruebas del flujo completo con usuarios reales de prueba (solicitante, aprobador, Contabilidad y Finanzas).
+  - *Siguiente:* Políticas RLS en Supabase, dominio verificado en Resend y lanzamiento a los primeros usuarios.
 - **Bugs críticos/conocidos:** 
-  - Posibles advertencias de fetch (RLS) en consultas a tablas maestras (`programas_proyectos_areas`, `conexiones_financieras`).
-  - Posibles bucles de navegación/retrasos en la sincronización de sesión al cambiar roles administrativos.
-- **Deuda técnica:** Medio-Alta. Existen múltiples componentes (ej. `solicitudes/nueva/page.tsx`, `page.tsx`) que utilizan estilos *inline* extensivos en lugar de extraerlos a CSS Modules o clases utilitarias, lo que dificulta la mantenibilidad.
-- **Última actualización:** 26 de Abril de 2026
+  - Los permisos por rol solo existen en la interfaz; las políticas RLS de Supabase no los reflejan. Si RLS solo permite modificar anticipos propios, el aprobador y Contabilidad y Finanzas no podrán procesar anticipos de otros (la app mostrará un error).
+  - Los correos salen desde `onboarding@resend.dev` y solo llegan a la cuenta dueña de Resend hasta verificar `fundaec.org`.
+  - El enlace "Reportes" del menú apunta a una página que no existe (solo visible para el Administrador Global).
+- **Deuda técnica:** Medio-Alta. Estilos *inline* extensivos; `supabase/migrations/init.sql` no refleja la base real.
+- **Seguridad:** El 2026-10-17 se eliminó una contraseña de la base que estaba escrita en el código (`fixDatabase.ts`, `/fix-db` y scripts de prueba) y se cambió la contraseña en Supabase. Sigue visible en el historial de git, pero ya no es válida.
+- **Última actualización:** 17 de Octubre de 2026
 
 ---
 
@@ -109,28 +111,29 @@
 ---
 
 ## SECCIÓN 8: FUNCIONALIDADES IMPLEMENTADAS
-- **[COMPLETADO] Autenticación & Perfiles:** SSO/Email con Supabase. Gestión de roles (Administrador Global, Solicitante, Aprobador, Finanzas).
+- **[COMPLETADO] Autenticación & Perfiles:** SSO con Google vía Supabase. Roles en `perfiles_autorizados`: Solicitante, Aprobador, Administrador, Contabilidad y Finanzas, más el Administrador Global.
+- **[COMPLETADO] Permisos por pantalla:** `src/lib/permissions.ts`. El menú muestra a cada persona solo sus módulos; Aprobaciones filtra por aprobador asignado; Desembolsos es exclusivo de Contabilidad y Finanzas; Legalizaciones muestra solo lo propio. El Administrador no puede asignar el rol Administrador ni modificar administradores.
 - **[COMPLETADO] Dashboard de Control:** KPIs en tiempo real (Anticipos activos, monto circulante, vencidos), actividad reciente.
 - **[COMPLETADO] Nueva Solicitud (Anticipos):** Formulario multi-sección, carga dinámica de Centros de Costo basada en el proyecto, firma digital (Canvas/Upload), guardado offline y "Borrador".
-- **[COMPLETADO] Módulo de Aprobaciones:** Listado filtrado por estado. Revisión y estampado de firma del aprobador.
-- **[COMPLETADO] Módulo de Desembolsos:** Interfaz financiera para asentar el pago real del anticipo.
-- **[COMPLETADO] Panel de Administración:** Gestión CRUD de usuarios, roles, y regiones.
+- **[COMPLETADO] Módulo de Aprobaciones:** Pestañas "Solicitudes de anticipo" y "Legalizaciones por revisar".
+- **[COMPLETADO] Módulo de Desembolsos (Contabilidad y Finanzas):** Pestañas "Pagos pendientes" y "Legalizaciones por cerrar".
+- **[COMPLETADO] Panel de Administración:** Gestión de personal autorizado, carga masiva (con columna `es_contabilidad_finanzas`), estructuras y asignación de aprobadores. La pestaña de anticipos solo consulta soportes.
 - **[COMPLETADO] Exportación PDF:** Generación de formato corporativo con logos y firmas incrustadas.
-- **[EN PROGRESO] Módulo de Legalizaciones:** Carga de facturas (JPG/PNG/PDF), procesamiento de plantillas Excel.
+- **[COMPLETADO – PENDIENTE DE PRUEBA] Flujo de legalización:** Carga de soportes con total gastado y comprobante de reintegro obligatorio si sobró dinero → revisión del aprobador → cierre por Contabilidad y Finanzas. Cualquiera de los dos puede devolverla con motivo y el trabajador la corrige y reenvía. Plazo de 5 días hábiles desde el registro del pago. Correos en cada paso. Aplica también a gastos sin anticipo.
 
 ---
 
 ## SECCIÓN 9: PLAN DE TRABAJO & ROADMAP
 
-### FASE ACTUAL: Legalización & Estabilidad
-- **Feature 1: Módulo de Legalización Final.** [Prioridad: Alta, Complejidad: Alta]
-  - Finalizar la UI para subir múltiples soportes (imágenes/PDF).
-  - Procesamiento del formato de Excel masivo.
-  - Guardado en Supabase Storage asociado al `ID_Anticipo`.
-- **Task 1: Refactorización de Estilos CSS.** [Prioridad: Media, Complejidad: Media]
-  - Extraer los estilos *inline* de las páginas a clases CSS en `globals.css` o CSS Modules para mejorar rendimiento y lectura.
-- **Task 2: Auditoría RLS (Row Level Security).** [Prioridad: Alta, Complejidad: Media]
-  - Asegurar que las consultas a tablas conectadas (`conexiones_financieras`) no fallen por permisos de usuario autenticado estándar.
+### FASE ACTUAL: Pruebas multiusuario y preparación de lanzamiento
+- **Task 1: Prueba completa con usuarios de prueba.** [Prioridad: Alta, Complejidad: Baja]
+  - Solicitante, aprobador y Contabilidad y Finanzas recorren el ciclo completo, incluidos una devolución y un reintegro.
+- **Task 2: Políticas RLS en Supabase.** [Prioridad: Alta, Complejidad: Media]
+  - Que la base aplique los mismos permisos que la interfaz: cada trabajador ve lo suyo, el aprobador lo asignado, Contabilidad y Finanzas lo aprobado, y solo administradores modifican `perfiles_autorizados`.
+- **Task 3: Correos con dominio verificado.** [Prioridad: Alta, Complejidad: Baja]
+  - Verificar `fundaec.org` en Resend y cambiar el remitente en `sendEmail.ts`.
+- **Task 4: Aviso a Contabilidad y Finanzas cuando se aprueba una solicitud** ("pendiente de desembolso"). [Prioridad: Media, Complejidad: Baja]
+- **Task 5: Refactorización de Estilos CSS.** [Prioridad: Baja, Complejidad: Media]
 
 ### PRÓXIMAS FASES:
 - **Feature X: Conciliación Financiera Automática.** [Prioridad: Media, Complejidad: Media]
@@ -180,6 +183,10 @@ if (!isSolicitante) {
 ---
 
 ## SECCIÓN 12: HISTORIAL DE CAMBIOS (CHANGELOG)
+- **2026-10-17** - Flujo completo de legalización: revisión del aprobador, cierre por Contabilidad y Finanzas, devolución con motivo y reenvío, comprobante de reintegro obligatorio, plazo de 5 días hábiles desde el pago y correos en cada paso. Corrección de fechas que se mostraban un día antes.
+- **2026-10-17** - Roles Contabilidad y Finanzas y Administrador (con protección de jerarquía) y permisos por pantalla en menú, Aprobaciones, Desembolsos y Legalizaciones (migración `003`).
+- **2026-10-17** - Eliminación de la contraseña de la base escrita en el código (`fixDatabase.ts`, `/fix-db`, scripts de prueba) y cambio de contraseña en Supabase.
+- **2026-10-17** - Corrección de la lista de Legalizaciones vacía: faltaba la columna `anticipos.tipo` (migración `002`).
 - **2026-05-13** - Implementado sistema de asignación jerárquica manual con validación de estructura cruzada (Programa/Área): nueva pestaña 'Asignación de Aprobadores' con filtrado inteligente y pre-selección en Nueva Solicitud. Reordenamiento de pestañas para mejorar flujo administrativo.
 - **2026-05-12** - Limpieza de interfaz: Implementado selector múltiple desplegable (multi-select dropdown) para Estructuras Vinculadas.
 - **2026-05-12** - Habilitada la edición de Estructuras Operativas (Programas/Proyectos/Áreas) en la pestaña de Configuración Maestro.

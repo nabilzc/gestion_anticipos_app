@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import toast, { Toaster } from "react-hot-toast";
 import * as XLSX from "xlsx";
 import { getPermisos, esPerfilProtegido } from "@/lib/permissions";
+import RevisionLegalizacionModal from "@/components/RevisionLegalizacionModal";
 
 type OrgSubcats = { [subcat: string]: string[] };
 type OrgHierarchy = { [cat: string]: { subcategorias?: OrgSubcats; cargos?: string[] } };
@@ -134,11 +135,7 @@ export default function AdministracionPage() {
     const [isRenaming, setIsRenaming] = useState(false);
 
     // Audit Modal States
-    const [showAuditModal, setShowAuditModal] = useState(false);
     const [auditAnticipo, setAuditAnticipo] = useState<any>(null);
-    const [auditObservation, setAuditObservation] = useState('');
-    const [isProcessingAudit, setIsProcessingAudit] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
     // Bulk Upload States
     const [showBulkModal, setShowBulkModal] = useState(false);
@@ -622,53 +619,6 @@ export default function AdministracionPage() {
         }
     };
 
-    const handleOpenAudit = (anticipo: any) => {
-        setAuditAnticipo(anticipo);
-        setAuditObservation('');
-        setShowAuditModal(true);
-    };
-
-    const handleAprobarAudit = async () => {
-        if (!auditAnticipo) return;
-        setIsProcessingAudit(true);
-        const loadingToast = toast.loading("Finalizando legalización...");
-        try {
-            const { error } = await supabase.from('anticipos').update({ status: 'Finalizado' }).eq('id', auditAnticipo.id);
-            if (error) throw error;
-            toast.success("Legalización aprobada y finalizada", { id: loadingToast });
-            setShowAuditModal(false);
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            toast.error("Error al aprobar", { id: loadingToast });
-        } finally {
-            setIsProcessingAudit(false);
-        }
-    };
-
-    const handleRechazarAudit = async () => {
-        if (!auditAnticipo || !auditObservation.trim()) {
-            toast.error("Las observaciones son requeridas para rechazar");
-            return;
-        }
-        setIsProcessingAudit(true);
-        const loadingToast = toast.loading("Rechazando legalización...");
-        try {
-            const { error } = await supabase.from('anticipos').update({ 
-                status: 'Rechazado',
-                motivo_rechazo: auditObservation
-            }).eq('id', auditAnticipo.id);
-            if (error) throw error;
-            toast.success("Legalización rechazada", { id: loadingToast });
-            setShowAuditModal(false);
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            toast.error("Error al rechazar", { id: loadingToast });
-        } finally {
-            setIsProcessingAudit(false);
-        }
-    };
 
     const permisos = getPermisos(user);
     const isGlobalAdmin = permisos.esAdminGlobal;
@@ -1830,8 +1780,8 @@ export default function AdministracionPage() {
                                                 </span>
                                             </td>
                                             <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                                                {(a.status === 'Legalizado' || a.status === 'En Revisión') && (
-                                                    <button onClick={() => handleOpenAudit(a)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--primary)', backgroundColor: 'white', color: 'var(--primary)', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                                {a.metadata_legalizacion?.soportes?.length > 0 && (
+                                                    <button onClick={() => setAuditAnticipo(a)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--primary)', backgroundColor: 'white', color: 'var(--primary)', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
                                                         Ver Soportes
                                                     </button>
                                                 )}
@@ -1996,79 +1946,14 @@ export default function AdministracionPage() {
                     </div>
                 </div>
             )}
-            {/* Modal de Auditoría de Soportes */}
-            {showAuditModal && auditAnticipo && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '700px', backgroundColor: 'var(--background)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
-                            <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '800' }}>Auditoría de Soportes</h3>
-                            <button onClick={() => setShowAuditModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
-                                <X size={24} />
-                            </button>
-                        </div>
-                        
-                        <div style={{ overflowY: 'auto', paddingRight: '4px', marginBottom: '20px', flex: 1 }}>
-                            <div style={{ marginBottom: '20px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Anticipo #ANT-{String(auditAnticipo.id).slice(-4)}</div>
-                                <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{auditAnticipo.profiles?.full_name}</div>
-                                <div style={{ fontSize: '14px', color: '#475569', marginTop: '4px' }}>{auditAnticipo.motivo}</div>
-                            </div>
-
-                            <h4 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '12px', color: '#1e293b' }}>Documentos</h4>
-                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
-                                {auditAnticipo.metadata_legalizacion?.soportes?.filter((s: any) => s.type.includes('excel') || s.type.includes('spreadsheet') || s.description === 'Cuenta de Cobro Firmada' || s.type.includes('pdf') || s.type.includes('word') || s.type.includes('document')).map((s: any, i: number) => (
-                                    <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', textDecoration: 'none', color: '#1d4ed8', fontWeight: '600', fontSize: '13px' }}>
-                                        <FileText size={18} />
-                                        {s.description || 'Documento'}
-                                    </a>
-                                ))}
-                                {(!auditAnticipo.metadata_legalizacion?.soportes || auditAnticipo.metadata_legalizacion?.soportes.filter((s: any) => s.type.includes('excel') || s.type.includes('spreadsheet') || s.description === 'Cuenta de Cobro Firmada' || s.type.includes('pdf') || s.type.includes('word') || s.type.includes('document')).length === 0) && (
-                                    <span style={{ fontSize: '13px', color: '#64748b' }}>No hay documentos.</span>
-                                )}
-                            </div>
-
-                            <h4 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '12px', color: '#1e293b' }}>Galería de Facturas</h4>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-                                {auditAnticipo.metadata_legalizacion?.soportes?.filter((s: any) => s.type.startsWith('image/')).map((s: any, i: number) => (
-                                    <div key={i} onClick={() => setSelectedImage(s.url)} style={{ cursor: 'pointer', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', aspectRatio: '1', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <img src={s.url} alt={s.description} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    </div>
-                                ))}
-                                {(!auditAnticipo.metadata_legalizacion?.soportes || auditAnticipo.metadata_legalizacion?.soportes.filter((s: any) => s.type.startsWith('image/')).length === 0) && (
-                                    <span style={{ fontSize: '13px', color: '#64748b', gridColumn: '1 / -1' }}>No hay imágenes cargadas.</span>
-                                )}
-                            </div>
-
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Observaciones (Obligatorio para rechazo)</label>
-                            <textarea
-                                rows={3}
-                                value={auditObservation}
-                                onChange={(e) => setAuditObservation(e.target.value)}
-                                placeholder="Indica aquí si falta algún soporte o hay alguna inconsistencia..."
-                                style={{ width: '100%', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0, borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
-                            <button onClick={handleRechazarAudit} disabled={isProcessingAudit} style={{ padding: '12px 20px', borderRadius: '12px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#dc2626', fontWeight: '600', cursor: isProcessingAudit ? 'not-allowed' : 'pointer', opacity: isProcessingAudit ? 0.7 : 1 }}>
-                                Rechazar
-                            </button>
-                            <button onClick={handleAprobarAudit} disabled={isProcessingAudit} style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', backgroundColor: '#16a34a', color: 'white', fontWeight: '700', cursor: isProcessingAudit ? 'not-allowed' : 'pointer', opacity: isProcessingAudit ? 0.7 : 1 }}>
-                                Aprobar Legalización
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal para ver imagen grande */}
-            {selectedImage && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: '20px' }} onClick={() => setSelectedImage(null)}>
-                    <img src={selectedImage} alt="Preview" style={{ maxWidth: '100%', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
-                    <button onClick={() => setSelectedImage(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
-                        <X size={32} />
-                    </button>
-                </div>
+            {/* Consulta de soportes: la revisión la hacen el aprobador y Contabilidad y Finanzas */}
+            {auditAnticipo && (
+                <RevisionLegalizacionModal
+                    anticipo={auditAnticipo}
+                    titulo="Soportes de la legalización"
+                    readOnly
+                    onClose={() => setAuditAnticipo(null)}
+                />
             )}
 
             {/* Modal de Carga Masiva */}

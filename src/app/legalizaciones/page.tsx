@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import toast, { Toaster } from "react-hot-toast";
-import { formatCurrency, formatDate, isAnticipoVencido } from "@/lib/utils/businessLogic";
+import { formatCurrency, isAnticipoVencido, ESTADO, ESTADOS_LEGALIZABLES, ESTADOS_CERRADOS } from "@/lib/utils/businessLogic";
 
 type TabType = "con-anticipo" | "sin-anticipo";
 
@@ -38,7 +38,7 @@ export default function LegalizacionesListPage() {
                     .from("anticipos")
                     .select("*")
                     .eq("solicitante_id", user.id)
-                    .in("status", ["Desembolsado", "Abierto", "Legalizado"])
+                    .in("status", [...ESTADOS_LEGALIZABLES, ESTADO.REVISION_APROBADOR, ESTADO.REVISION_FINANZAS, ...ESTADOS_CERRADOS])
                     .or("tipo.is.null,tipo.neq.legalizacion_directa")
                     .order("created_at", { ascending: false });
 
@@ -65,7 +65,9 @@ export default function LegalizacionesListPage() {
         fetchData();
     }, [user]);
 
-    const filteredAnticipos = anticipos.filter(a => 
+    const pendientesCount = anticipos.filter(a => ESTADOS_LEGALIZABLES.includes(a.status)).length;
+
+    const filteredAnticipos = anticipos.filter(a =>
         (a.motivo || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
         (a.id || "").toString().includes(searchTerm)
     );
@@ -77,11 +79,15 @@ export default function LegalizacionesListPage() {
 
     const getStatusBadge = (status: string) => {
         const map: Record<string, { bg: string; color: string; label: string }> = {
-            'En Revisión': { bg: '#fef3c7', color: '#92400e', label: 'En Revisión' },
-            'Aprobado': { bg: '#dcfce7', color: '#166534', label: 'Aprobado' },
+            'Desembolsado': { bg: '#dbeafe', color: '#1e40af', label: 'Pendiente por legalizar' },
+            'Abierto': { bg: '#dbeafe', color: '#1e40af', label: 'Pendiente por legalizar' },
+            'En Revisión': { bg: '#fef3c7', color: '#92400e', label: 'Revisión del aprobador' },
+            'Revisión Finanzas': { bg: '#ffedd5', color: '#9a3412', label: 'Revisión de Contabilidad y Finanzas' },
+            'Devuelto': { bg: '#fee2e2', color: '#991b1b', label: 'Devuelta: corregir' },
+            'Cerrado': { bg: '#dcfce7', color: '#166534', label: 'Cerrada' },
+            'Finalizado': { bg: '#dcfce7', color: '#166534', label: 'Cerrada' },
+            'Legalizado': { bg: '#dcfce7', color: '#166534', label: 'Cerrada' },
             'Rechazado': { bg: '#fee2e2', color: '#991b1b', label: 'Rechazado' },
-            'Reembolsado': { bg: '#dbeafe', color: '#1e40af', label: 'Reembolsado' },
-            'Legalizado': { bg: '#f0fdf4', color: '#16a34a', label: 'Legalizado' },
         };
         return map[status] || { bg: '#f1f5f9', color: '#475569', label: status };
     };
@@ -125,7 +131,7 @@ export default function LegalizacionesListPage() {
                 >
                     <Receipt size={16} />
                     Legalización de Gastos
-                    {anticipos.length > 0 && (
+                    {pendientesCount > 0 && (
                         <span style={{
                             background: activeTab === 'con-anticipo' ? '#2563eb' : '#94a3b8',
                             color: '#fff',
@@ -135,7 +141,7 @@ export default function LegalizacionesListPage() {
                             borderRadius: '10px',
                             minWidth: '20px',
                             textAlign: 'center'
-                        }}>{anticipos.length}</span>
+                        }}>{pendientesCount}</span>
                     )}
                 </button>
                 <button
@@ -199,23 +205,22 @@ export default function LegalizacionesListPage() {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             {filteredAnticipos.map(a => {
                                 const vencido = isAnticipoVencido(a);
-                                return (
-                                    <Link 
-                                        key={a.id} 
-                                        href={`/legalizaciones/${a.id}`}
-                                        style={{ 
-                                            textDecoration: 'none', 
-                                            background: '#fff', 
-                                            borderRadius: '20px', 
-                                            padding: '20px', 
-                                            border: '1px solid var(--border)', 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            justifyContent: 'space-between',
-                                            transition: 'all 0.2s',
-                                            boxShadow: '0 4px 6px rgba(0,0,0,0.02)'
-                                        }}
-                                    >
+                                const editable = ESTADOS_LEGALIZABLES.includes(a.status);
+                                const badge = getStatusBadge(a.status);
+                                const cardStyle: React.CSSProperties = {
+                                    textDecoration: 'none',
+                                    background: '#fff',
+                                    borderRadius: '20px',
+                                    padding: '20px',
+                                    border: `1px solid ${a.status === ESTADO.DEVUELTO ? '#fecaca' : 'var(--border)'}`,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 4px 6px rgba(0,0,0,0.02)'
+                                };
+                                const contenido = (
+                                    <>
                                         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
                                             <div style={{ 
                                                 width: '48px', 
@@ -236,16 +241,29 @@ export default function LegalizacionesListPage() {
                                                     <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: '#f1f5f9', color: '#475569', fontWeight: '700' }}>
                                                         {formatCurrency(a.monto_total)}
                                                     </span>
+                                                    <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: badge.bg, color: badge.color, fontWeight: '700' }}>
+                                                        {badge.label}
+                                                    </span>
                                                     {vencido && (
                                                         <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', fontWeight: '700' }}>
                                                             VENCIDO
                                                         </span>
                                                     )}
                                                 </div>
+                                                {a.status === ESTADO.DEVUELTO && (
+                                                    <div style={{ fontSize: '12px', color: '#991b1b', marginTop: '6px' }}>
+                                                        Motivo: {a.metadata_legalizacion?.devolucion?.motivo || a.motivo_rechazo}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        <ChevronRight size={20} color="#94a3b8" />
-                                    </Link>
+                                        {editable && <ChevronRight size={20} color="#94a3b8" />}
+                                    </>
+                                );
+                                return editable ? (
+                                    <Link key={a.id} href={`/legalizaciones/${a.id}`} style={cardStyle}>{contenido}</Link>
+                                ) : (
+                                    <div key={a.id} style={cardStyle}>{contenido}</div>
                                 );
                             })}
                         </div>

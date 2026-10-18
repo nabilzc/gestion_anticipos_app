@@ -2,27 +2,50 @@
  * Lógica de negocio unificada para la gestión de anticipos
  */
 
+// Estados del ciclo de legalización (columna anticipos.status)
+export const ESTADO = {
+    DESEMBOLSADO: 'Desembolsado',
+    REVISION_APROBADOR: 'En Revisión',
+    REVISION_FINANZAS: 'Revisión Finanzas',
+    DEVUELTO: 'Devuelto',
+    CERRADO: 'Cerrado',
+} as const;
+
+// Estados en los que el trabajador puede cargar o corregir su legalización
+export const ESTADOS_LEGALIZABLES = [ESTADO.DESEMBOLSADO, 'Abierto', ESTADO.DEVUELTO];
+
+// 'Finalizado' y 'Legalizado' son estados heredados equivalentes a Cerrado
+export const ESTADOS_CERRADOS = [ESTADO.CERRADO, 'Finalizado', 'Legalizado'];
+
+// "2026-10-17" se interpreta como medianoche UTC; en Colombia eso cae el día anterior
+const parseFechaLocal = (fecha: string): Date => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+        const [y, m, d] = fecha.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+    return new Date(fecha);
+};
+
 /**
- * Determina si un anticipo está vencido.
- * Un anticipo se considera vencido si han pasado más de 5 días HÁBILES desde la 'fecha_ejecucion'
- * (o 'created_at' si no hay fecha_ejecucion) y el estado no es 'Cerrado', 'Borrador' o 'Rechazado'.
+ * Un anticipo desembolsado vence si pasan más de 5 días hábiles (L-V) desde que
+ * Contabilidad y Finanzas registró el pago sin que el trabajador legalice.
  */
 export const isAnticipoVencido = (anticipo: any): boolean => {
-    const { status, fecha_ejecucion, created_at } = anticipo;
+    const { status, fecha_pago, fecha_ejecucion } = anticipo;
 
-    // Estados que no pueden estar vencidos
-    if (["Cerrado", "Borrador", "Rechazado", "Aprobado", "En Revisión", "Legalizado"].includes(status)) {
+    if (status !== ESTADO.DESEMBOLSADO && status !== 'Abierto') {
         return false;
     }
 
-    const fechaReferencia = fecha_ejecucion || created_at;
+    // fecha_ejecucion solo como respaldo para anticipos pagados antes de guardar fecha_pago
+    const fechaReferencia = fecha_pago || fecha_ejecucion;
     if (!fechaReferencia) return false;
 
     // Normalizamos las fechas para comparar solo días, ignorando la hora
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
-    
-    const fechaRef = new Date(fechaReferencia);
+
+    const fechaRef = parseFechaLocal(fechaReferencia);
     fechaRef.setHours(0, 0, 0, 0);
     
     // Si la fecha de ejecución es futura o es hoy, no está vencido
@@ -61,7 +84,8 @@ export const formatCurrency = (valor: number): string => {
  */
 export const formatDate = (fecha: string | Date): string => {
     if (!fecha) return "N/A";
-    return new Date(fecha).toLocaleDateString('es-CO', {
+    const date = typeof fecha === 'string' ? parseFechaLocal(fecha) : fecha;
+    return date.toLocaleDateString('es-CO', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric'
