@@ -37,6 +37,7 @@ export default function LegalizacionesListPage() {
                 const { data: anticiposData, error: anticiposError } = await supabase
                     .from("anticipos")
                     .select("*")
+                    .eq("solicitante_id", user.id)
                     .in("status", ["Desembolsado", "Abierto", "Legalizado"])
                     .or("tipo.is.null,tipo.neq.legalizacion_directa")
                     .order("created_at", { ascending: false });
@@ -48,6 +49,7 @@ export default function LegalizacionesListPage() {
                 const { data: directasData, error: directasError } = await supabase
                     .from("anticipos")
                     .select("*, profiles:solicitante_id(full_name)")
+                    .eq("solicitante_id", user.id)
                     .eq("tipo", "legalizacion_directa")
                     .order("created_at", { ascending: false });
 

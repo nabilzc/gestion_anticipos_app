@@ -16,6 +16,7 @@ import {
   Settings2
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
+import { getPermisos } from '@/lib/permissions';
 
 interface SidebarProps {
   user?: {
@@ -27,6 +28,9 @@ interface SidebarProps {
     email?: string;
     profile?: {
       role?: string;
+      es_solicitante?: boolean;
+      es_aprobador?: boolean;
+      es_contabilidad_finanzas?: boolean;
     };
   };
   onLogout?: () => void;
@@ -34,20 +38,19 @@ interface SidebarProps {
 
 export default function Sidebar({ user, onLogout }: SidebarProps) {
   const pathname = usePathname();
+  const permisos = getPermisos(user);
 
   const menuItems = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Nueva Solicitud', href: '/solicitudes/nueva', icon: PlusCircle },
-    { name: 'Mis Anticipos', href: '/mis-anticipos', icon: FileText },
-    { name: 'Aprobaciones', href: '/aprobaciones', icon: ClipboardCheck },
-    { name: 'Desembolsos', href: '/desembolsos', icon: ArrowLeftRight },
-    { name: 'Reportes', href: '/reportes', icon: BarChart3 },
-    { name: 'Legalizaciones', href: '/legalizaciones', icon: Receipt },
-  ];
-
-  if (user?.profile?.role === 'Administrador Global' || user?.email === 'nzapata@fundaec.org') {
-      menuItems.push({ name: 'Administración', href: '/administracion', icon: Settings2 });
-  }
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, visible: true },
+    { name: 'Nueva Solicitud', href: '/solicitudes/nueva', icon: PlusCircle, visible: permisos.puedeSolicitar },
+    { name: 'Mis Anticipos', href: '/mis-anticipos', icon: FileText, visible: permisos.puedeSolicitar },
+    { name: 'Aprobaciones', href: '/aprobaciones', icon: ClipboardCheck, visible: permisos.puedeAprobar },
+    { name: 'Desembolsos', href: '/desembolsos', icon: ArrowLeftRight, visible: permisos.esContabilidadFinanzas },
+    // /reportes aún no existe
+    { name: 'Reportes', href: '/reportes', icon: BarChart3, visible: permisos.esAdminGlobal },
+    { name: 'Legalizaciones', href: '/legalizaciones', icon: Receipt, visible: permisos.puedeSolicitar },
+    { name: 'Administración', href: '/administracion', icon: Settings2, visible: permisos.puedeAdministrar },
+  ].filter(item => item.visible);
 
   const isActive = (href: string) => {
     if (href === '/' && pathname === '/') return true;
