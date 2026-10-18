@@ -21,69 +21,188 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
 
     useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log("Auth event:", event, "session user:", session?.user?.email);
+        let mounted = true;
+        let initialized = false;
+
+        const loadSession = async (session: any) => {
+            if (!mounted) return;
+            
             if (session) {
-                if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
-                    setUser(session.user);
+                // Sincronización de Cookies manual para el Middleware
+                document.cookie = `sb-auth-token=${session.access_token}; path=/; max-age=${session.expires_in}; SameSite=Lax; secure`;
+
+                // Excepción prioritaria: pase VIP
+                const isNabil = session.user.email === 'nzapata@fundaec.org';
+                
+                if (isNabil) {
+                    setUser({
+                        ...session.user,
+                        profile: { 
+                            role: 'Administrador Global', 
+                            es_solicitante: true, 
+                            es_aprobador: true,
+                            cargo: 'Director Administrativo y Financiero'
+                        }
+                    });
                     setLoading(false);
+                    return;
+                }
+                
+                if (session.user.email) {
+                    const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
+                    if (!mounted) return;
+                    
+                    if (profile) {
+                        // Sincronizar permisos desde perfiles_autorizados en cada inicio de sesión
+                        const { data: authProfile } = await supabase.from('perfiles_autorizados')
+                            .select('*, programas_proyectos_areas(nombre)')
+                            .eq('email', session.user.email).single();
+
+                        let finalProfile = { ...profile };
+
+                        if (authProfile) {
+                            let calculatedRole = profile.role;
+                            // Respetar la jerarquía de Administrador Global
+                            if (profile.role !== 'Administrador Global') {
+                                if (authProfile.es_administrador) calculatedRole = 'Administrador';
+                                else if (authProfile.es_aprobador) calculatedRole = 'Aprobador';
+                                else if (authProfile.es_solicitante) calculatedRole = 'Solicitante';
+                                else calculatedRole = 'Sin rol';
+                            }
+
+                            finalProfile = {
+                                ...profile,
+                                role: calculatedRole,
+                                programa: authProfile.programas_proyectos_areas?.nombre || profile.programa,
+                                es_solicitante: authProfile.es_solicitante || false,
+                                es_aprobador: authProfile.es_aprobador || false,
+                                id_programa_area: authProfile.id_programa_area || null,
+                                ids_programa_area: authProfile.ids_programa_area || []
+                            };
+
+                            // Actualizar la tabla profiles con los nuevos permisos si hubo cambios
+                            if (profile.role !== finalProfile.role || profile.es_solicitante !== finalProfile.es_solicitante || profile.es_aprobador !== finalProfile.es_aprobador || profile.programa !== finalProfile.programa) {
+                                await supabase.from('profiles').update({
+                                    role: finalProfile.role,
+                                    programa: finalProfile.programa,
+                                    es_solicitante: finalProfile.es_solicitante,
+                                    es_aprobador: finalProfile.es_aprobador
+                                }).eq('id', profile.id);
+                            }
+                        }
+                        
+                        setUser({ ...session.user, profile: finalProfile });
+                        setLoading(false);
+                    } else {
+                        // Verificar perfiles autorizados si no tiene perfil (Nuevo usuario)
+                        const { data: authProfile } = await supabase.from('perfiles_autorizados')
+                            .select('*, programas_proyectos_areas(nombre)')
+                            .eq('email', session.user.email).single();
+
+                        if (authProfile) {
+                            let calculatedRole = 'Sin rol';
+                            if (authProfile.es_administrador) calculatedRole = 'Administrador';
+                            else if (authProfile.es_aprobador) calculatedRole = 'Aprobador';
+                            else if (authProfile.es_solicitante) calculatedRole = 'Solicitante';
+
+                            // Excepción: Si por email le corresponde ser Global
+                            if (session.user.email === 'nzapata@fundaec.org') {
+                                calculatedRole = 'Administrador Global';
+                            }
+
+                            const newProfile = {
+                                id: session.user.id,
+                                email: session.user.email,
+                                full_name: authProfile.nombre_completo || session.user.user_metadata?.full_name || '',
+                                role: calculatedRole,
+                                programa: authProfile.programas_proyectos_areas?.nombre || null,
+                                es_solicitante: authProfile.es_solicitante || false,
+                                es_aprobador: authProfile.es_aprobador || false,
+                                id_programa_area: authProfile.id_programa_area || null,
+                                ids_programa_area: authProfile.ids_programa_area || []
+                            };
+
+                            const { data: createdProfile } = await supabase.from('profiles').insert([newProfile]).select().single();
+                            
+                            setUser({ ...session.user, profile: createdProfile || newProfile });
+                            setLoading(false);
+                        } else {
+                            await supabase.auth.signOut();
+                            if (!mounted) return;
+                            document.cookie = `sb-auth-token=; path=/; max-age=0; SameSite=Lax; secure`;
+                            setUser(null);
+                            setLoading(false);
+                            const currentPath = window.location.pathname;
+                            if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                                router.push("/login?error=not_authorized");
+                            }
+                        }
+                    }
                 } else {
                     await supabase.auth.signOut();
+                    if (!mounted) return;
+                    document.cookie = `sb-auth-token=; path=/; max-age=0; SameSite=Lax; secure`;
                     setUser(null);
                     setLoading(false);
-                    router.push("/login?error=unauthorized");
+                    const currentPath = window.location.pathname;
+                    if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                        router.push("/login?error=unauthorized");
+                    }
                 }
-            } else if (event === 'SIGNED_OUT') {
+            } else {
                 setUser(null);
                 setLoading(false);
-                if (pathname !== "/login" && !pathname.startsWith("/auth/")) router.push("/login");
-            } else if (!session) {
-                // Only stop loading if we're on login page or if we've checked and didn't find a session
-                if (pathname === "/login" || pathname === "/auth/callback") {
-                    setLoading(false);
+                const currentPath = window.location.pathname;
+                if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                    router.push("/login");
+                }
+            }
+        };
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            // INITIAL_SESSION se dispara al montar el listener en Supabase v2
+            if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+                initialized = true;
+                await loadSession(session);
+            } else if (event === 'SIGNED_OUT') {
+                if (!mounted) return;
+                document.cookie = `sb-auth-token=; path=/; max-age=0; SameSite=Lax; secure`;
+                setUser(null);
+                setLoading(false);
+                const currentPath = window.location.pathname;
+                if (currentPath !== "/login" && !currentPath.startsWith("/auth/")) {
+                    router.push("/login");
                 }
             }
         });
 
-        const checkUser = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                if (session.user.email && ALLOWED_EMAILS.includes(session.user.email)) {
-                    setUser(session.user);
-                } else {
-                    await supabase.auth.signOut();
-                    setUser(null);
-                    router.push("/login?error=unauthorized");
-                }
-            } else {
-                if (pathname !== "/login" && !pathname.startsWith("/auth/")) {
-                    // Small delay to allow hash processing if needed
-                    setTimeout(async () => {
-                        const { data: { session: delayedSession } } = await supabase.auth.getSession();
-                        if (!delayedSession && pathname !== "/login" && !pathname.startsWith("/auth/")) {
-                            router.push("/login");
-                        }
-                        setLoading(false);
-                    }, 800);
-                    return;
-                }
+        // Fallback de seguridad
+        setTimeout(() => {
+            if (!initialized && mounted) {
+                supabase.auth.getSession().then(({ data: { session } }) => {
+                    if (!initialized && mounted) {
+                        initialized = true;
+                        loadSession(session);
+                    }
+                });
             }
-            setLoading(false);
-        };
+        }, 500);
 
-        checkUser();
-        return () => subscription.unsubscribe();
-    }, [router, pathname]);
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
+    }, [router]);
 
     const signOut = async () => {
         await supabase.auth.signOut();
         router.push("/login");
     };
 
-    if (loading && pathname !== "/login" && !pathname.startsWith("/auth/")) {
+    if (loading) {
         return (
             <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
-                <Loader2 className="animate-spin text-primary" size={40} style={{ color: "#132d1e" }} />
+                <Loader2 className="animate-spin text-primary" size={40} style={{ color: "#2563eb" }} />
             </div>
         );
     }

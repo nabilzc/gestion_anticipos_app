@@ -13,20 +13,6 @@ export default function SignaturePad({ onSignatureChange }: SignaturePadProps) {
     const [isDrawing, setIsDrawing] = useState(false);
     const [hasSignature, setHasSignature] = useState(false);
 
-    useEffect(() => {
-        initCanvas();
-        window.addEventListener('resize', handleResize);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-        };
-    }, []);
-
-    const handleResize = () => {
-        // We optionally save and restore the canvas content on resize, 
-        // but for simplicity we will just re-init to keep it bounded.
-        initCanvas();
-    };
-
     const initCanvas = () => {
         const canvas = canvasRef.current;
         const container = containerRef.current;
@@ -53,6 +39,20 @@ export default function SignaturePad({ onSignatureChange }: SignaturePadProps) {
         ctx.lineJoin = 'round';
         ctx.strokeStyle = '#0f172a'; // dark slate
     };
+
+    const handleResize = () => {
+        // We optionally save and restore the canvas content on resize, 
+        // but for simplicity we will just re-init to keep it bounded.
+        initCanvas();
+    };
+
+    useEffect(() => {
+        initCanvas();
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+        };
+    }, []);
 
     const getPos = (e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent): [number, number] | null => {
         const canvas = canvasRef.current;

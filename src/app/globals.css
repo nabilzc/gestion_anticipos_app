@@ -15,8 +15,8 @@
   --accent-foreground: #2563eb;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
-  --border: #f1f5f9;
-  --input: #f1f5f9;
+  --border: #cbd5e1;
+  --input: #cbd5e1;
   --ring: #2563eb;
   --radius: 12px;
 
@@ -128,4 +128,133 @@ button {
 .status-open {
   background: #dbeafe;
   color: #1e40af;
+}
+
+/* Celebration Animation */
+@keyframes celebrate-pop {
+  0% { transform: scale(0) rotate(-20deg); opacity: 0; }
+  50% { transform: scale(1.3) rotate(10deg); opacity: 1; }
+  70% { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.celebration-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.celebration-emoji {
+  font-size: 120px;
+  animation: celebrate-pop 2s ease-out forwards;
+}
+
+@keyframes particle-fly {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(var(--x), var(--y)); opacity: 0; }
+}
+
+.particle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  animation: particle-fly 1.5s ease-out forwards;
+}
+
+/* Forms */
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.form-section-number {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+}
+.form-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.form-grid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  margin-bottom: 8px;
+}
+.form-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background-color: white;
+  color: var(--foreground);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+.form-input[readonly] {
+  background-color: var(--muted);
+}
+
+/* Estilos de alto contraste y estados interactivos para inputs, selects y textareas */
+.form-input,
+input[type="text"]:not([readonly]),
+input[type="number"],
+input[type="date"],
+input[type="tel"],
+input[type="email"],
+select,
+textarea {
+  border: 1px solid var(--border) !important;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out !important;
+}
+
+.form-input:not([readonly]):hover,
+input[type="text"]:not([readonly]):hover,
+input[type="number"]:hover,
+input[type="date"]:hover,
+input[type="tel"]:hover,
+input[type="email"]:hover,
+select:hover,
+textarea:hover {
+  border-color: #94a3b8 !important;
+}
+
+.form-input:not([readonly]):focus,
+input[type="text"]:not([readonly]):focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input[type="tel"]:focus,
+input[type="email"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  outline: none !important;
 }

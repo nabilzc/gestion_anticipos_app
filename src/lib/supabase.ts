@@ -1,25 +1,50 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Función para obtener las credenciales de forma segura
-const getSupabaseConfig = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ikthjuxdeujlhpvswank.supabase.co';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_e0EztK4lLDT4KzFzXJsNiw_pAOFX6tF';
 
-  if (!url || !key) {
-    // Solo mostramos advertencia en el cliente (navegador)
-    if (typeof window !== 'undefined') {
-      console.warn('Supabase credentials are missing. Auth will not work.');
+const config = { url: supabaseUrl, key: supabaseKey };
+
+if (typeof window !== 'undefined') {
+  console.log('Supabase Config:', { 
+    url: config.url, 
+    hasKey: !!config.key,
+    isPlaceholder: config.url.includes('placeholder')
+  });
+}
+
+const customFetch = async (url: string | URL | Request, options?: RequestInit) => {
+  const response = await fetch(url, options);
+  
+  if (!response.ok) {
+    try {
+      const clone = response.clone();
+      const body = await clone.json();
+      
+      // Llamar al Server Action dinámicamente para evitar problemas de bundler en imports estáticos
+      import('@/app/actions/logError').then(({ logError }) => {
+        logError(`Request fallido a Supabase: ${response.status} ${response.statusText}`, {
+          url: typeof url === 'string' ? url : (url as any).url || String(url),
+          method: options?.method || 'GET',
+          status: response.status,
+          error: body
+        });
+      }).catch(() => {});
+    } catch (e) {
+      import('@/app/actions/logError').then(({ logError }) => {
+        logError(`Request fallido a Supabase: ${response.status} ${response.statusText}`, {
+          url: typeof url === 'string' ? url : (url as any).url || String(url),
+          method: options?.method || 'GET',
+          status: response.status
+        });
+      }).catch(() => {});
     }
-    // Devolvemos placeholders solo para evitar errores de tipo/inicialización en build
-    return {
-      url: 'https://tmp-placeholder.supabase.co',
-      key: 'tmp-placeholder'
-    };
   }
-
-  return { url, key };
+  return response;
 };
 
-const config = getSupabaseConfig();
-
-export const supabase = createClient(config.url, config.key);
+export const supabase = createClient(config.url, config.key, {
+  global: {
+    fetch: customFetch
+  }
+});

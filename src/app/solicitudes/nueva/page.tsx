@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
-import { Info, Plus, Trash2, Save, Send } from "lucide-react";
+import { Info, Plus, Trash2, Save, Send, AlertCircle, Loader2, UserCheck } from "lucide-react";
 import SignaturePad from "@/components/SignaturePad";
 import { numeroALetras } from "@/lib/utils/numeroALetras";
 import toast, { Toaster } from "react-hot-toast";
@@ -28,6 +28,7 @@ export default function NuevaSolicitudPage() {
     const [numDocumento, setNumDocumento] = useState("");
     const [cargo, setCargo] = useState("");
     const [proyecto, setProyecto] = useState("");
+    const [solicitanteProyecto, setSolicitanteProyecto] = useState("");
     const [contacto, setContacto] = useState("");
 
     const [concepto, setConcepto] = useState("");
@@ -45,6 +46,151 @@ export default function NuevaSolicitudPage() {
     const [signatureData, setSignatureData] = useState<string | null>(null);
     const [signatureTab, setSignatureTab] = useState<"upload" | "draw">("upload");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [proyectosList, setProyectosList] = useState<any[]>([]);
+    const [isSolicitante, setIsSolicitante] = useState(true);
+    const [aprobadorPrincipal, setAprobadorPrincipal] = useState<string>("");
+    const [aprobadorSuplente, setAprobadorSuplente] = useState<string>("");
+    const [suplenteSeleccionado, setSuplenteSeleccionado] = useState<string>("");
+    const [aprobadorSeleccionado, setAprobadorSeleccionado] = useState<string>("");
+
+    // Estados para simulación de solicitante (Modo de Pruebas)
+    const [solicitantesList, setSolicitantesList] = useState<any[]>([]);
+    const [simulatedUser, setSimulatedUser] = useState<any | null>(null);
+
+    // Obtener solicitante activo (simulado o el autenticado)
+    const solicitanteActivoProfile = simulatedUser || user?.profile;
+    const solicitanteActivoEmail = simulatedUser ? simulatedUser.email : user?.email;
+    const solicitanteActivoNombre = simulatedUser ? simulatedUser.full_name : (user?.user_metadata?.full_name || user?.email || "Usuario");
+    const solicitanteActivoId = simulatedUser ? simulatedUser.id : user?.id;
+
+    // Inicialización y carga de sesión (permisos reales)
+    useEffect(() => {
+        if (user && user.profile) {
+            setIsSolicitante(user.profile.es_solicitante === true || user.email === 'nzapata@fundaec.org');
+        }
+    }, [user]);
+
+    // Carga de perfiles para la simulación (combinando autorizados y perfiles reales)
+    useEffect(() => {
+        if (!user) return;
+        const fetchSolicitantes = async () => {
+            const { data: authData, error: authError } = await supabase
+                .from('perfiles_autorizados')
+                .select('*')
+                .eq('es_solicitante', true);
+
+            const { data: profilesData, error: profilesError } = await supabase
+                .from('profiles')
+                .select('*');
+
+            if (authError) console.error("Error fetching perfiles_autorizados:", authError);
+            if (profilesError) console.error("Error fetching profiles:", profilesError);
+
+            if (authData) {
+                const combinedList = authData.map(auth => {
+                    const realProfile = profilesData?.find(p => p.email?.toLowerCase() === auth.email?.toLowerCase());
+                    return {
+                        id: realProfile?.id || `auth-${auth.email}`,
+                        email: auth.email,
+                        full_name: auth.nombre_completo || realProfile?.full_name || auth.email,
+                        cargo: realProfile?.cargo || "",
+                        cedula: realProfile?.cedula || "",
+                        telefono: realProfile?.telefono || "",
+                        banco: realProfile?.banco || "",
+                        tipo_cuenta: realProfile?.tipo_cuenta || "Ahorros",
+                        numero_cuenta: realProfile?.numero_cuenta || "",
+                        id_programa_area: auth.id_programa_area || null,
+                        ids_programa_area: auth.ids_programa_area || []
+                    };
+                }).sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+                setSolicitantesList(combinedList);
+            }
+        };
+        fetchSolicitantes();
+    }, [user]);
+
+    // Auto-cargar datos desde el perfil del solicitante activo
+    useEffect(() => {
+        if (solicitanteActivoProfile) {
+            setNumDocumento(solicitanteActivoProfile.cedula || "");
+            setContacto(solicitanteActivoProfile.telefono || "");
+            setBanco(solicitanteActivoProfile.banco || "");
+            setTipoCuenta(solicitanteActivoProfile.tipo_cuenta || "Ahorros");
+            setNumCuenta(solicitanteActivoProfile.numero_cuenta || "");
+
+            // Auto-seleccionar programa/proyecto/área
+            const targetProjId = solicitanteActivoProfile.id_programa_area || 
+                (solicitanteActivoProfile.ids_programa_area && solicitanteActivoProfile.ids_programa_area.length > 0 
+                    ? solicitanteActivoProfile.ids_programa_area[0] 
+                    : null);
+            if (targetProjId) {
+                setProyecto(targetProjId);
+                setSolicitanteProyecto(targetProjId);
+            } else {
+                setProyecto("");
+                setSolicitanteProyecto("");
+            }
+
+            // Auto-cargar cargo (si no tiene cargo explícito en el perfil, intentar extraerlo de la estructura asignada)
+            let cargoFinal = solicitanteActivoProfile.cargo || "";
+            if (!cargoFinal && targetProjId && proyectosList.length > 0) {
+                const matchedProj = proyectosList.find(p => p.id === targetProjId);
+                if (matchedProj && matchedProj.nombre) {
+                    const parts = matchedProj.nombre.split(" > ");
+                    cargoFinal = parts[parts.length - 1]; // Toma la última parte como el cargo
+                }
+            }
+            setCargo(cargoFinal);
+        } else {
+            setCargo("");
+            setNumDocumento("");
+            setContacto("");
+            setBanco("");
+            setTipoCuenta("Ahorros");
+            setNumCuenta("");
+            setProyecto("");
+            setSolicitanteProyecto("");
+        }
+    }, [solicitanteActivoProfile, proyectosList]);
+
+    // Se removió el fetchUserProject redundante ya que el proyecto ahora se auto-selecciona directamente
+    // al cargar el perfil activo (solicitanteActivoProfile) que ya contiene id_programa_area y ids_programa_area.
+
+    useEffect(() => {
+        if (!user) return;
+        const fetchMaestroData = async () => {
+            const { data, error } = await supabase.from('programas_proyectos_areas').select('*').eq('activo', true);
+            if (error) console.error("Error fetching programas_proyectos_areas (Posible RLS):", error);
+            if (data) setProyectosList(data);
+        };
+        fetchMaestroData();
+    }, [user]);
+
+    // Auto-carga de aprobadores (principal y suplente) cuando cambia el solicitante o el proyecto
+    useEffect(() => {
+        if (!solicitanteActivoEmail || !proyecto) {
+            setAprobadorPrincipal("");
+            setAprobadorSuplente("");
+            setSuplenteSeleccionado("");
+            setAprobadorSeleccionado("");
+            return;
+        }
+        const fetchAprobadores = async () => {
+            const { data } = await supabase
+                .from('perfiles_autorizados')
+                .select('aprobador_email, aprobador_suplente_email')
+                .eq('email', solicitanteActivoEmail)
+                .single();
+            const principal = data?.aprobador_email || "";
+            const suplente = data?.aprobador_suplente_email || "";
+            setAprobadorPrincipal(principal);
+            setAprobadorSuplente(suplente);
+            setSuplenteSeleccionado(""); // reset al cambiar proyecto
+            setAprobadorSeleccionado(principal); // por defecto el aprobador principal
+        };
+        fetchAprobadores();
+    }, [proyecto, solicitanteActivoEmail]);
 
     // Inicialización y carga de sesión
     useEffect(() => {
@@ -55,9 +201,6 @@ export default function NuevaSolicitudPage() {
             year: "numeric"
         });
         setFecha(today);
-
-        // Try to restore from a previously stored local context if needed
-        // In the future this could query the last record from Supabase for this user
     }, []);
 
     const totalAnticipo = gastos.reduce((acc, curr) => acc + (Number(curr.valor) || 0), 0);
@@ -103,13 +246,32 @@ export default function NuevaSolicitudPage() {
     const handleFillDummyData = () => {
         setNumDocumento("1020304050");
         setTipoDocumento("CC");
-        setCargo("Coordinador de Proyecto");
-        setProyecto("Programa Rural Andino");
+        // Conservar el cargo si ya está definido
+        if (!cargo) {
+            if (user?.email === 'nzapata@fundaec.org') {
+                setCargo("Director Administrativo y Financiero");
+            } else {
+                setCargo("Coordinador de Proyecto");
+            }
+        }
+        
+        // Conservar el programa/proyecto/área si ya está seleccionado
+        if (!proyecto) {
+            // Buscar el primer elemento que sea un Programa, Proyecto, Área o Dirección
+            const primerValido = proyectosList.find(p => ["Programas", "Proyectos", "Área", "Dirección"].includes(p.tipo));
+            if (primerValido) {
+                setProyecto(primerValido.id);
+                setSolicitanteProyecto(primerValido.id);
+            } else {
+                setProyecto("");
+                setSolicitanteProyecto("");
+            }
+        }
         setContacto("3001234567");
         setConcepto("Gastos de viaje para capacitación técnica en zona rural");
         setGastos([
-            { id: "1", tipoGasto: "Viáticos", codigo: "V-001", descripcion: "Alimentación (3 días)", valor: 150000 },
-            { id: "2", tipoGasto: "Transporte", codigo: "T-001", descripcion: "Bus intermunicipal ida/vuelta", valor: 85000 }
+            { id: "1", tipoGasto: "Viáticos", codigo: "", descripcion: "Alimentación (5 días)", valor: 150000 },
+            { id: "2", tipoGasto: "Transporte", codigo: "", descripcion: "Bus intermunicipal ida/vuelta", valor: 85000 }
         ]);
         setBanco("Bancolombia");
         setTipoCuenta("Ahorros");
@@ -126,7 +288,7 @@ export default function NuevaSolicitudPage() {
     const validateForm = () => {
         if (!numDocumento.trim()) return "Número de documento requerido";
         if (!contacto.trim()) return "Número de contacto requerido";
-        if (!proyecto) return "Selecciona un proyecto/programa";
+        if (!proyecto) return "Selecciona un programa, proyecto, área o dirección";
         if (!concepto.trim()) return "Concepto del anticipo requerido";
         if (!banco) return "Selecciona una entidad bancaria";
         if (!numCuenta.trim()) return "Número de cuenta requerido";
@@ -159,46 +321,44 @@ export default function NuevaSolicitudPage() {
         const loadingToast = toast.loading(estado === 'Enviado' ? 'Enviando solicitud...' : 'Guardando borrador...');
 
         const payload = {
-            solicitante_id: user.id,
+            solicitante_id: (solicitanteActivoId && String(solicitanteActivoId).startsWith('auth-')) ? null : (solicitanteActivoId || null),
             status: estado,
             motivo: concepto,
             monto_total: totalAnticipo,
             monto_letras: numeroALetras(totalAnticipo),
 
-            // Consolidamos la info bancaria en el campo JSONB
-            banco_info: {
-                entidad: banco,
-                tipo_cuenta: tipoCuenta,
-                numero_cuenta: numCuenta
-            },
+            banco_nombre: banco,
+            banco_tipo_cuenta: tipoCuenta,
+            banco_numero_cuenta: numCuenta,
 
-            // Estos campos no aparecen en la captura de pantalla de la tabla 'anticipos'
-            // Los comentamos para evitar el error 400 (Bad Request)
-            /*
             fecha_ejecucion: fechaEjecucion,
             observaciones: observaciones,
             firma_base64: signatureData,
             tipo_documento: tipoDocumento,
             numero_documento: numDocumento,
             cargo: cargo,
-            proyecto: proyecto,
-            contacto: contacto
-            */
+            proyecto: proyectosList.find(p => p.id === proyecto)?.nombre || proyecto,
+            contacto: contacto,
+            aprobador_email: aprobadorSeleccionado || null
         };
 
         console.log("Datos a enviar:", payload);
 
         try {
-            // 1. Guardar en tabla anticipos
+            console.log("Insertando anticipo...");
             const { data: anticipoData, error: anticipoError } = await supabase
                 .from('anticipos')
                 .insert([payload])
                 .select()
                 .single();
 
-            if (anticipoError) throw anticipoError;
+            if (anticipoError) {
+                console.error("Error en tabla anticipos:", anticipoError);
+                throw new Error(`DB Error (Anticipos): ${anticipoError.message}`);
+            }
 
             const anticipoId = anticipoData.id;
+            console.log("Anticipo creado con ID:", anticipoId);
 
             // 2. Guardar los items en tabla anticipo_items
             if (anticipoId) {
@@ -210,6 +370,7 @@ export default function NuevaSolicitudPage() {
                     valor: Number(g.valor) || 0
                 }));
 
+                console.log("Insertando items:", itemsPayload);
                 const { error: itemsError } = await supabase
                     .from('anticipo_items')
                     .insert(itemsPayload);
@@ -224,8 +385,8 @@ export default function NuevaSolicitudPage() {
                     try {
                         await sendAnticipoNotification({
                             id: anticipoId,
-                            solicitante_nombre: user.user_metadata?.full_name || user.email || "Usuario",
-                            solicitante_email: user.email || "",
+                            solicitante_nombre: solicitanteActivoNombre,
+                            solicitante_email: solicitanteActivoEmail || "",
                             motivo: concepto,
                             monto_total: totalAnticipo,
                             monto_letras: numeroALetras(totalAnticipo),
@@ -234,7 +395,8 @@ export default function NuevaSolicitudPage() {
                                 tipo_cuenta: tipoCuenta,
                                 numero_cuenta: numCuenta
                             },
-                            items: gastos
+                            items: gastos,
+                            aprobador_email: aprobadorSeleccionado || undefined
                         });
                     } catch (emailErr) {
                         console.error("No se pudo enviar el correo:", emailErr);
@@ -250,9 +412,15 @@ export default function NuevaSolicitudPage() {
                 router.push("/mis-anticipos");
             }, 1500);
 
-        } catch (err) {
-            console.error(err);
-            toast.error("Error al guardar en la base de datos", { id: loadingToast });
+        } catch (err: any) {
+            console.error("Detailed Error catch:", err);
+            const errorMessage = err?.message || (typeof err === 'string' ? err : "Error desconocido");
+            toast.error(`Error: ${errorMessage}`, { id: loadingToast });
+
+            // Si es un fetch error, dar más contexto
+            if (errorMessage.includes("fetch")) {
+                toast.error("Verifica tu conexión y los valores de Supabase en .env.local", { duration: 5000 });
+            }
 
             // BACKUP OFFLINE
             saveOfflineBackup(payload, gastos);
@@ -281,9 +449,20 @@ export default function NuevaSolicitudPage() {
         }
     };
 
-    const proyectos = ['Programa Rural Andino', 'Programa Educativo Sur', 'Programa Urbano Norte', 'Administración', 'Proyecto CEBV', 'Proyecto Tutores', 'Otro'];
     const tiposGasto = ['Viáticos', 'Transporte', 'Materiales', 'Alimentación', 'Hospedaje', 'Servicios', 'Comunicaciones', 'Otros'];
     const bancos = ['Bancolombia', 'Davivienda', 'Banco de Bogotá', 'BBVA', 'Nequi', 'Daviplata', 'Banco Popular', 'Scotiabank Colpatria', 'Banco AV Villas', 'Otro'];
+
+    if (!isSolicitante) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: '16px' }} />
+                <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Acceso Restringido</h1>
+                <p style={{ color: 'var(--muted-foreground)', maxWidth: '400px', marginTop: '8px' }}>
+                    No tienes permisos de "Solicitante" en tu perfil. Contacta al Administrador.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '820px', margin: '0 auto', paddingBottom: '40px' }}>
@@ -338,20 +517,67 @@ export default function NuevaSolicitudPage() {
 
                 {/* S2: Datos del solicitante */}
                 <div className="card" style={{ marginBottom: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
-                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' }}>2</div>
-                        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>Información del solicitante</h3>
+                    <div className="form-section-header">
+                        <div className="form-section-number">2</div>
+                        <h3 className="form-section-title">Información del solicitante</h3>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+                    {/* Selector de Simulación (Modo Experimental) */}
+                    <div style={{
+                        padding: '16px',
+                        backgroundColor: '#f8fafc',
+                        border: '1px dashed #cbd5e1',
+                        borderRadius: '8px',
+                        marginBottom: '20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '10px'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '16px' }}>🧪</span>
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: '#334155' }}>
+                                Modo de Pruebas: Simular Solicitante
+                            </span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                            Puedes seleccionar otro solicitante de la base de datos para probar cómo se auto-completan sus datos, cargos, proyectos y aprobadores.
+                        </p>
+                        <select
+                            className="form-input"
+                            value={simulatedUser ? simulatedUser.id : ""}
+                            onChange={(e) => {
+                                const selectedId = e.target.value;
+                                if (!selectedId) {
+                                    setSimulatedUser(null);
+                                    toast.success("Restaurado a tu perfil real");
+                                } else {
+                                    const selected = solicitantesList.find(p => p.id === selectedId);
+                                    if (selected) {
+                                        setSimulatedUser(selected);
+                                        toast.success(`Simulando a: ${selected.full_name}`);
+                                    }
+                                }
+                            }}
+                            style={{ maxWidth: '400px', backgroundColor: 'white' }}
+                        >
+                            <option value="">— Usar mi usuario autenticado ({user?.user_metadata?.full_name || user?.email}) —</option>
+                            {solicitantesList.map(profile => (
+                                <option key={profile.id} value={profile.id}>
+                                    {profile.full_name} ({profile.email})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="form-grid-auto">
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Nombre completo <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="text" value={user?.user_metadata?.full_name || 'Desconocido'} readOnly style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--muted)', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Nombre completo <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <input type="text" className="form-input" value={solicitanteActivoNombre} readOnly />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Tipo de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <select value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }}>
+                            <label className="form-label">Tipo de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <select className="form-input" value={tipoDocumento} onChange={e => setTipoDocumento(e.target.value)}>
                                 <option value="CC">CC – Cédula de Ciudadanía</option>
                                 <option value="CE">CE – Cédula de Extranjería</option>
                                 <option value="PA">PA – Pasaporte</option>
@@ -359,31 +585,99 @@ export default function NuevaSolicitudPage() {
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Número de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="text" placeholder="Ej: 1234567890" value={numDocumento} onChange={e => setNumDocumento(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Número de documento <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <input type="text" className="form-input" placeholder="Ej: 1234567890" value={numDocumento} onChange={e => setNumDocumento(e.target.value)} />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Cargo</label>
-                            <input type="text" value={cargo} onChange={e => setCargo(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Cargo</label>
+                            <input type="text" className="form-input" value={cargo} onChange={e => setCargo(e.target.value)} />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Proyecto / Programa <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <select value={proyecto} onChange={e => setProyecto(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }}>
+                            <label className="form-label">Programa / Proyecto / Área <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <select className="form-input" value={solicitanteProyecto !== null && solicitanteProyecto !== undefined ? String(solicitanteProyecto) : ""} onChange={e => setSolicitanteProyecto(e.target.value)}>
                                 <option value="">— Seleccione —</option>
-                                {proyectos.map(p => <option key={p} value={p}>{p}</option>)}
+                                {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
+                                    <optgroup label="Direcciones">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Dirección")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
+                                {proyectosList.filter(p => p.tipo === "Programas").length > 0 && (
+                                    <optgroup label="Programas">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Programas")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
+                                {proyectosList.filter(p => p.tipo === "Proyectos").length > 0 && (
+                                    <optgroup label="Proyectos">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Proyectos")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
+                                {proyectosList.filter(p => p.tipo === "Área").length > 0 && (
+                                    <optgroup label="Áreas">
+                                        {[...proyectosList]
+                                            .filter(p => p.tipo === "Área")
+                                            .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                            .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                        }
+                                    </optgroup>
+                                )}
                             </select>
                         </div>
 
+
+                        {/* Selector de Aprobador */}
+                        {(aprobadorPrincipal || aprobadorSuplente) ? (
+                            <div>
+                                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <UserCheck size={14} color="var(--primary)" /> Aprobador Asignado <span style={{ color: 'var(--destructive)' }}>*</span>
+                                    <span style={{ fontSize: '11px', color: 'var(--muted-foreground)', fontWeight: '400' }}>(Selecciona quién debe aprobar esta solicitud)</span>
+                                </label>
+                                <select
+                                    className="form-input"
+                                    value={aprobadorSeleccionado}
+                                    onChange={e => setAprobadorSeleccionado(e.target.value)}
+                                    style={{ borderColor: 'var(--border)' }}
+                                    required
+                                >
+                                    {aprobadorPrincipal && (
+                                        <option value={aprobadorPrincipal}>
+                                            {aprobadorPrincipal} (Principal)
+                                        </option>
+                                    )}
+                                    {aprobadorSuplente && (
+                                        <option value={aprobadorSuplente}>
+                                            {aprobadorSuplente} (Suplente)
+                                        </option>
+                                    )}
+                                </select>
+                            </div>
+                        ) : proyecto ? (
+                            <div style={{ padding: '12px', borderRadius: '8px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '8px', color: '#dc2626', fontSize: '13px' }}>
+                                <span>⚠️ No tienes aprobadores asignados para tu estructura. Contacta al administrador.</span>
+                            </div>
+                        ) : null}
+
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Correo electrónico</label>
-                            <input type="email" value={user?.email || ''} readOnly style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'var(--muted)', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Correo electrónico</label>
+                            <input type="email" className="form-input" value={solicitanteActivoEmail || ''} readOnly />
                         </div>
 
                         <div>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: '500', color: 'var(--muted-foreground)', marginBottom: '8px' }}>Número de contacto <span style={{ color: 'var(--destructive)' }}>*</span></label>
-                            <input type="tel" placeholder="Ej: 3001234567" value={contacto} onChange={e => setContacto(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border)', backgroundColor: 'white', color: 'var(--foreground)', fontSize: '14px', outline: 'none' }} />
+                            <label className="form-label">Número de contacto <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                            <input type="tel" className="form-input" placeholder="Ej: 3001234567" value={contacto} onChange={e => setContacto(e.target.value)} />
                         </div>
                     </div>
                 </div>
@@ -393,6 +687,49 @@ export default function NuevaSolicitudPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px', paddingBottom: '16px', borderBottom: '1px solid var(--border)' }}>
                         <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 'bold' }}>3</div>
                         <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0 }}>Información del anticipo</h3>
+                    </div>
+
+                    <div style={{ marginBottom: '20px' }}>
+                        <label className="form-label">Programa / Proyecto / Área al que se cargará el gasto <span style={{ color: 'var(--destructive)' }}>*</span></label>
+                        <select className="form-input" value={proyecto !== null && proyecto !== undefined ? String(proyecto) : ""} onChange={e => setProyecto(e.target.value)} style={{ width: '100%' }}>
+                            <option value="">— Seleccione —</option>
+                            {proyectosList.filter(p => p.tipo === "Dirección").length > 0 && (
+                                <optgroup label="Direcciones">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Dirección")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                            {proyectosList.filter(p => p.tipo === "Programas").length > 0 && (
+                                <optgroup label="Programas">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Programas")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                            {proyectosList.filter(p => p.tipo === "Proyectos").length > 0 && (
+                                <optgroup label="Proyectos">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Proyectos")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                            {proyectosList.filter(p => p.tipo === "Área").length > 0 && (
+                                <optgroup label="Áreas">
+                                    {[...proyectosList]
+                                        .filter(p => p.tipo === "Área")
+                                        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+                                        .map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)
+                                    }
+                                </optgroup>
+                            )}
+                        </select>
                     </div>
 
                     <div style={{ marginBottom: '24px' }}>
@@ -411,7 +748,6 @@ export default function NuevaSolicitudPage() {
                             <thead style={{ backgroundColor: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                                 <tr>
                                     <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Tipo de gasto</th>
-                                    <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Código</th>
                                     <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Descripción</th>
                                     <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: '600', color: 'var(--muted-foreground)' }}>Valor ($)</th>
                                     <th style={{ width: '50px' }}></th>
@@ -428,15 +764,6 @@ export default function NuevaSolicitudPage() {
                                             >
                                                 {tiposGasto.map(t => <option key={t}>{t}</option>)}
                                             </select>
-                                        </td>
-                                        <td style={{ padding: '8px 16px' }}>
-                                            <input
-                                                type="text"
-                                                placeholder="Ej: V-001"
-                                                value={gasto.codigo}
-                                                onChange={e => handleGastoChange(gasto.id, 'codigo', e.target.value)}
-                                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '13px' }}
-                                            />
                                         </td>
                                         <td style={{ padding: '8px 16px' }}>
                                             <input
