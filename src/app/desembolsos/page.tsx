@@ -76,16 +76,21 @@ export default function DesembolsosPage() {
         setIsProcessing(true);
         const loadingToast = toast.loading("Registrando desembolso...");
         try {
-            const { error } = await supabase
+            const { data: updated, error } = await supabase
                 .from("anticipos")
-                .update({ 
+                .update({
                     status: "Desembolsado",
                     fecha_pago: fechaTransferencia,
                     comprobante_id: numeroComprobante
                 })
-                .eq("id", selectedAnticipo.id);
+                .eq("id", selectedAnticipo.id)
+                .select("id");
 
             if (error) throw error;
+            // RLS bloquea el update sin devolver error: se detecta porque no regresa ninguna fila
+            if (!updated || updated.length === 0) {
+                throw new Error("No tienes permiso para registrar este pago o el anticipo ya no existe.");
+            }
 
             // Enviar correo de notificación (Asíncrono)
             if (selectedAnticipo.profiles?.email) {
@@ -102,9 +107,9 @@ export default function DesembolsosPage() {
             setTimeout(() => setIsCelebrating(false), 3000);
             setShowPayModal(false);
             fetchAprobados();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
-            toast.error("Error al registrar el desembolso", { id: loadingToast });
+            toast.error(`Error al registrar el desembolso: ${err?.message || "desconocido"}`, { id: loadingToast });
         } finally {
             setIsProcessing(false);
         }

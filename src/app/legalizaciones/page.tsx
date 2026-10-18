@@ -16,6 +16,7 @@ import {
     Wallet
 } from "lucide-react";
 import Link from "next/link";
+import toast, { Toaster } from "react-hot-toast";
 import { formatCurrency, formatDate, isAnticipoVencido } from "@/lib/utils/businessLogic";
 
 type TabType = "con-anticipo" | "sin-anticipo";
@@ -52,8 +53,9 @@ export default function LegalizacionesListPage() {
 
                 if (directasError) throw directasError;
                 setDirectas(directasData || []);
-            } catch (err) {
+            } catch (err: any) {
                 console.error(err);
+                toast.error(`Error al cargar legalizaciones: ${err?.message || "desconocido"}`);
             } finally {
                 setLoading(false);
             }
@@ -84,6 +86,7 @@ export default function LegalizacionesListPage() {
 
     return (
         <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', paddingBottom: '60px' }}>
+            <Toaster position="top-right" />
             <div style={{ marginBottom: '32px' }}>
                 <h1 style={{ fontSize: '26px', fontWeight: '800', marginBottom: '8px' }}>Legalizaciones</h1>
                 <p style={{ color: 'var(--muted-foreground)' }}>Gestiona tus legalizaciones de gastos.</p>
