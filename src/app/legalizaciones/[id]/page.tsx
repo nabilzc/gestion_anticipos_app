@@ -21,12 +21,10 @@ import {
     Save
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import { formatCurrency, formatDate } from "@/lib/utils/businessLogic";
+import { formatCurrency, ESTADO, ESTADOS_LEGALIZABLES } from "@/lib/utils/businessLogic";
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import { saveAs } from "file-saver";
-import { sendLegalizationFinanceNotification } from "@/app/actions/sendEmail";
-import { numeroALetras } from "@/lib/utils/numeroALetras";
+import { sendLegalizacionParaAprobador } from "@/app/actions/sendEmail";
+import { etiquetaAnticipo } from "@/lib/legalizacion";
 
 interface SupportFile {
     file: File;
@@ -52,6 +50,8 @@ export default function LegalizacionPage() {
     const [uploadedExcel, setUploadedExcel] = useState<File | null>(null);
     const [uploadedCuentaCobro, setUploadedCuentaCobro] = useState<File | null>(null);
     const [totalLegalizado, setTotalLegalizado] = useState<number | null>(null);
+    const [comprobanteReintegro, setComprobanteReintegro] = useState<File | null>(null);
+    const reintegroInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         async function fetchAnticipo() {
@@ -65,14 +65,16 @@ export default function LegalizacionPage() {
 
                 if (error) throw error;
                 
-                // Solo se puede legalizar si está Desembolsado o Abierto
-                if (data.status !== 'Desembolsado' && data.status !== 'Abierto') {
+                if (!ESTADOS_LEGALIZABLES.includes(data.status)) {
                     toast.error("Este anticipo no puede ser legalizado en su estado actual");
-                    router.push("/mis-anticipos");
+                    router.push("/legalizaciones");
                     return;
                 }
 
                 setAnticipo(data);
+                if (data.metadata_legalizacion?.total_legalizado != null) {
+                    setTotalLegalizado(data.metadata_legalizacion.total_legalizado);
+                }
             } catch (err) {
                 console.error(err);
                 toast.error("Error al cargar la información");
@@ -224,9 +226,19 @@ export default function LegalizacionPage() {
 
 
 
+    const requiereReintegro = totalLegalizado !== null && anticipo && totalLegalizado < anticipo.monto_total;
+
     const handleFinalSubmit = async () => {
         if (supports.length === 0) {
             toast.error("Debes cargar al menos un soporte");
+            return;
+        }
+        if (totalLegalizado === null || Number.isNaN(totalLegalizado)) {
+            toast.error("Indica el total gastado");
+            return;
+        }
+        if (requiereReintegro && !comprobanteReintegro) {
+            toast.error("Gastaste menos de lo recibido: adjunta el comprobante de reintegro del dinero sobrante");
             return;
         }
 
@@ -267,6 +279,16 @@ export default function LegalizacionPage() {
                 });
             }
 
+            if (requiereReintegro && comprobanteReintegro) {
+                const url = await uploadToSupabase({ file: comprobanteReintegro, preview: '', type: comprobanteReintegro.type, description: '', isUploading: false });
+                uploadedUrls.push({
+                    url,
+                    description: 'Comprobante de reintegro',
+                    type: comprobanteReintegro.type || 'application/pdf',
+                    categoria: 'reintegro'
+                });
+            }
+
             for (let i = 0; i < supports.length; i++) {
                 const url = await uploadToSupabase(supports[i]);
                 uploadedUrls.push({
@@ -276,29 +298,42 @@ export default function LegalizacionPage() {
                 });
             }
 
-            // 2. Actualizar estado del anticipo y guardar metadata de soportes
-            const { error: updateError } = await supabase
+            // 2. Pasa a revisión del aprobador. Un reenvío reemplaza los soportes anteriores
+            // y conserva la última devolución para que el revisor vea qué se pidió corregir.
+            const esReenvio = anticipo.status === ESTADO.DEVUELTO;
+            const { data: updated, error: updateError } = await supabase
                 .from("anticipos")
-                .update({ 
-                    status: 'En Revisión', // Cambio de 'Legalizado' a 'En Revisión' según solicitud
+                .update({
+                    status: ESTADO.REVISION_APROBADOR,
                     metadata_legalizacion: {
                         fecha_carga: new Date().toISOString(),
-                        soportes: uploadedUrls
+                        soportes: uploadedUrls,
+                        total_legalizado: totalLegalizado,
+                        ...(anticipo.metadata_legalizacion?.devolucion ? { devolucion: anticipo.metadata_legalizacion.devolucion } : {})
                     }
                 })
-                .eq("id", id);
+                .eq("id", id)
+                .in("status", ESTADOS_LEGALIZABLES)
+                .select("id");
 
             if (updateError) throw updateError;
+            if (!updated || updated.length === 0) {
+                throw new Error("No se pudo enviar: la legalización ya fue enviada o no tienes permiso.");
+            }
 
-            // 3. Notificar a Finanzas
-            await sendLegalizationFinanceNotification({
-                id: id as string,
-                solicitante_nombre: anticipo.profiles?.full_name || "Usuario",
-                monto_total: anticipo.monto_total
-            });
+            // 3. Notificar al aprobador
+            sendLegalizacionParaAprobador({
+                id: etiquetaAnticipo(anticipo),
+                solicitante_nombre: anticipo.profiles?.full_name || "Trabajador",
+                aprobador_email: anticipo.aprobador_email,
+                monto_total: anticipo.monto_total,
+                total_legalizado: totalLegalizado,
+                es_reenvio: esReenvio,
+                app_url: window.location.origin
+            }).catch(err => console.error("Error enviando correo al aprobador:", err));
 
-            toast.success("¡Legalización enviada exitosamente! 🎉", { id: loadingToast });
-            router.push("/mis-anticipos");
+            toast.success("¡Legalización enviada a tu aprobador! 🎉", { id: loadingToast });
+            router.push("/legalizaciones");
         } catch (err: any) {
             console.error("Error detallado de Supabase:", err);
             const errMsg = err?.message || err?.error_description || (typeof err === 'object' ? JSON.stringify(err) : String(err));
@@ -325,9 +360,29 @@ export default function LegalizacionPage() {
                 </button>
                 <div>
                     <h1 style={{ fontSize: '20px', fontWeight: '800' }}>Legalización de Gastos</h1>
-                    <p style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Anticipo #ANT-{id} • {formatCurrency(anticipo.monto_total)}</p>
+                    <p style={{ fontSize: '13px', color: 'var(--muted-foreground)' }}>Anticipo {etiquetaAnticipo(anticipo)} • {formatCurrency(anticipo.monto_total)}</p>
                 </div>
             </div>
+
+            {anticipo.status === ESTADO.DEVUELTO && (
+                <div style={{ margin: '0 20px 24px', padding: '16px', borderRadius: '16px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b' }}>
+                    <div style={{ fontWeight: '800', fontSize: '14px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <AlertCircle size={16} /> Legalización devuelta por {anticipo.metadata_legalizacion?.devolucion?.por || 'el revisor'}
+                    </div>
+                    <div style={{ fontSize: '14px' }}>{anticipo.metadata_legalizacion?.devolucion?.motivo || anticipo.motivo_rechazo}</div>
+                    <div style={{ fontSize: '12px', marginTop: '8px', color: '#b91c1c' }}>
+                        Vuelve a cargar todos los documentos con las correcciones. Al enviarla, regresará a tu aprobador.
+                    </div>
+                </div>
+            )}
+
+            <input
+                ref={reintegroInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setComprobanteReintegro(e.target.files?.[0] || null)}
+                style={{ display: 'none' }}
+            />
 
             {/* Input oculto para carga de archivos */}
             <input 
@@ -453,8 +508,8 @@ export default function LegalizacionPage() {
                 </div>
             </div>
 
-            {/* Alertas de Conciliación */}
-            {totalLegalizado !== null && anticipo && (
+            {/* Conciliación */}
+            {anticipo && (
                 <div style={{ padding: '0 20px', marginBottom: '32px' }}>
                     <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '16px', padding: '16px' }}>
                         <h3 style={{ fontSize: '13px', fontWeight: '800', color: '#475569', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -465,10 +520,19 @@ export default function LegalizacionPage() {
                             <span style={{ color: '#64748b' }}>Anticipo Desembolsado:</span>
                             <span style={{ fontWeight: '600' }}>{formatCurrency(anticipo.monto_total)}</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', fontSize: '14px' }}>
-                            <span style={{ color: '#64748b' }}>Total Legalizado (Excel):</span>
-                            <span style={{ fontWeight: '600' }}>{formatCurrency(totalLegalizado)}</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', fontSize: '14px', gap: '12px' }}>
+                            <label htmlFor="total-gastado" style={{ color: '#64748b' }}>Total gastado (según tu Excel):</label>
+                            <input
+                                id="total-gastado"
+                                type="number"
+                                min={0}
+                                value={totalLegalizado ?? ''}
+                                onChange={(e) => setTotalLegalizado(e.target.value === '' ? null : Number(e.target.value))}
+                                placeholder="Ej: 450000"
+                                style={{ width: '150px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', textAlign: 'right', fontWeight: '600' }}
+                            />
                         </div>
+                        {totalLegalizado !== null && (<>
                         <div style={{ height: '1px', background: '#cbd5e1', margin: '8px 0' }} />
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: '14px', fontWeight: '800', color: '#1e293b' }}>Diferencia:</span>
@@ -481,6 +545,28 @@ export default function LegalizacionPage() {
                                 </div>
                             </div>
                         </div>
+                        </>)}
+
+                        {requiereReintegro && (
+                            <div style={{ marginTop: '16px', padding: '12px', borderRadius: '12px', background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                                <div style={{ fontSize: '13px', fontWeight: '800', color: '#c2410c', marginBottom: '4px' }}>COMPROBANTE DE REINTEGRO (OBLIGATORIO)</div>
+                                <div style={{ fontSize: '12px', color: '#9a3412', marginBottom: '10px' }}>
+                                    Consigna a FUNDAEC los {formatCurrency(anticipo.monto_total - (totalLegalizado || 0))} que sobraron y adjunta el comprobante.
+                                </div>
+                                {comprobanteReintegro ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '8px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{comprobanteReintegro.name}</span>
+                                        <button onClick={() => { setComprobanteReintegro(null); if (reintegroInputRef.current) reintegroInputRef.current.value = ''; }} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button onClick={() => reintegroInputRef.current?.click()} className="secondary-button" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%', padding: '10px', fontSize: '12px' }}>
+                                        <Upload size={16} /> Cargar comprobante (foto o PDF)
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -581,7 +667,7 @@ export default function LegalizacionPage() {
                     }}
                 >
                     {isSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Save size={20} />}
-                    Finalizar Legalización
+                    {anticipo.status === ESTADO.DEVUELTO ? 'Reenviar corregida al aprobador' : 'Enviar a mi aprobador'}
                 </button>
             </div>
         </div>

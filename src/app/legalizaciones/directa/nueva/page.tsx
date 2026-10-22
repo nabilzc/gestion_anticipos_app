@@ -12,7 +12,7 @@ import SignaturePad from "@/components/SignaturePad";
 import { numeroALetras } from "@/lib/utils/numeroALetras";
 import { formatCurrency } from "@/lib/utils/businessLogic";
 import toast, { Toaster } from "react-hot-toast";
-import { sendDirectLegalizationNotification } from "@/app/actions/sendEmail";
+import { sendLegalizacionParaAprobador } from "@/app/actions/sendEmail";
 import * as XLSX from 'xlsx';
 
 type GastoItem = {
@@ -478,14 +478,15 @@ export default function NuevaLegalizacionDirectaPage() {
                     .eq("id", anticipoId);
             }
 
-            // 5. Notificar a Finanzas
-            await sendDirectLegalizationNotification({
-                id: anticipoId,
+            // 5. Notificar al aprobador, que revisa antes de Contabilidad y Finanzas
+            sendLegalizacionParaAprobador({
+                id: `#LD-${String(anticipoId).substring(0, 8)}`,
                 solicitante_nombre: solicitanteActivoNombre,
-                solicitante_email: solicitanteActivoEmail || "",
-                motivo: concepto,
-                monto_total: totalAnticipo
-            });
+                aprobador_email: aprobadorSeleccionado || null,
+                monto_total: totalAnticipo,
+                sin_anticipo: true,
+                app_url: window.location.origin
+            }).catch(err => console.error("Error enviando correo al aprobador:", err));
 
             toast.success("¡Legalización directa enviada exitosamente! 🎉", { id: loadingToast });
             setTimeout(() => router.push("/legalizaciones"), 1500);

@@ -58,6 +58,10 @@ export default function MisAnticiposPage() {
             "Vencido": { bg: "#fef2f2", text: "#ef4444" },
             "Abierto": { bg: "#eff6ff", text: "#2563eb" },
             "Desembolsado": { bg: "#f0fdf4", text: "#16a34a" },
+            "En Revisión": { bg: "#fef3c7", text: "#92400e" },
+            "Revisión Finanzas": { bg: "#ffedd5", text: "#9a3412" },
+            "Devuelto": { bg: "#fef2f2", text: "#ef4444" },
+            "Finalizado": { bg: "#fafafa", text: "#71717a" },
         };
 
         const style = styles[status] || styles["Borrador"];

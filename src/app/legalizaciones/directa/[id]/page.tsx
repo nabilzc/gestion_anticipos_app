@@ -10,7 +10,8 @@ import {
     User, MapPin, CreditCard, Calendar, ClipboardList
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import { formatCurrency, formatDate } from "@/lib/utils/businessLogic";
+import { formatCurrency, formatDate, ESTADO } from "@/lib/utils/businessLogic";
+import { sendLegalizacionParaAprobador } from "@/app/actions/sendEmail";
 import * as XLSX from 'xlsx';
 
 interface SupportFile {
@@ -197,9 +198,45 @@ export default function LegalizacionDirectaDetailPage() {
         }
     };
 
+    const handleReenviar = async () => {
+        setIsSubmitting(true);
+        const loadingToast = toast.loading("Reenviando a revisión...");
+        try {
+            const { data: updated, error } = await supabase
+                .from("anticipos")
+                .update({ status: ESTADO.REVISION_APROBADOR })
+                .eq("id", id)
+                .eq("status", ESTADO.DEVUELTO)
+                .select("id");
+            if (error) throw error;
+            if (!updated || updated.length === 0) throw new Error("No se pudo reenviar: ya fue reenviada o no tienes permiso.");
+
+            sendLegalizacionParaAprobador({
+                id: `#LD-${String(anticipo.id).substring(0, 8)}`,
+                solicitante_nombre: anticipo.profiles?.full_name || "Trabajador",
+                aprobador_email: anticipo.aprobador_email,
+                monto_total: anticipo.monto_total,
+                es_reenvio: true,
+                sin_anticipo: true,
+                app_url: window.location.origin
+            }).catch(err => console.error("Error enviando correo al aprobador:", err));
+
+            toast.success("Reenviada a tu aprobador ✅", { id: loadingToast });
+            setAnticipo({ ...anticipo, status: ESTADO.REVISION_APROBADOR });
+        } catch (err: any) {
+            toast.error(`Error: ${err?.message || 'Desconocido'}`, { id: loadingToast });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const getStatusBadge = (status: string) => {
         const map: Record<string, { bg: string; color: string; label: string }> = {
-            'En Revisión': { bg: '#fef3c7', color: '#92400e', label: '⏳ En Revisión' },
+            'En Revisión': { bg: '#fef3c7', color: '#92400e', label: '⏳ Revisión del aprobador' },
+            'Revisión Finanzas': { bg: '#ffedd5', color: '#9a3412', label: '⏳ Revisión de Contabilidad y Finanzas' },
+            'Devuelto': { bg: '#fee2e2', color: '#991b1b', label: '↩️ Devuelto para corregir' },
+            'Cerrado': { bg: '#dcfce7', color: '#166534', label: '✅ Cerrado' },
+            'Finalizado': { bg: '#dcfce7', color: '#166534', label: '✅ Cerrado' },
             'Aprobado': { bg: '#dcfce7', color: '#166534', label: '✅ Aprobado' },
             'Rechazado': { bg: '#fee2e2', color: '#991b1b', label: '❌ Rechazado' },
             'Reembolsado': { bg: '#dbeafe', color: '#1e40af', label: '💰 Reembolsado' },
@@ -256,6 +293,23 @@ export default function LegalizacionDirectaDetailPage() {
                     </span>
                 </div>
             </div>
+
+            {anticipo.status === ESTADO.DEVUELTO && (
+                <div style={{ marginBottom: '24px', padding: '16px', borderRadius: '16px', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b' }}>
+                    <div style={{ fontWeight: '800', fontSize: '14px', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <AlertCircle size={16} /> Devuelta por {anticipo.metadata_legalizacion?.devolucion?.por || 'el revisor'}
+                    </div>
+                    <div style={{ fontSize: '14px', marginBottom: '12px' }}>{anticipo.metadata_legalizacion?.devolucion?.motivo || anticipo.motivo_rechazo}</div>
+                    <div style={{ fontSize: '12px', marginBottom: '12px' }}>Agrega abajo los documentos que faltan y luego reenvíala.</div>
+                    <button
+                        onClick={handleReenviar}
+                        disabled={isSubmitting}
+                        style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', background: '#991b1b', color: '#fff', fontWeight: '700', cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}
+                    >
+                        Reenviar a revisión
+                    </button>
+                </div>
+            )}
 
             {/* Info del Solicitante */}
             <div className="card" style={{ marginBottom: '24px' }}>
@@ -364,8 +418,8 @@ export default function LegalizacionDirectaDetailPage() {
                 </div>
             )}
 
-            {/* Cargar más soportes (solo si está en revisión) */}
-            {anticipo.status === 'En Revisión' && (
+            {/* Cargar más soportes (antes de que el aprobador la revise o si fue devuelta) */}
+            {(anticipo.status === ESTADO.REVISION_APROBADOR || anticipo.status === ESTADO.DEVUELTO) && (
                 <>
                     <div className="card" style={{ marginBottom: '24px' }}>
                         <h3 style={{ fontSize: '14px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '16px' }}>

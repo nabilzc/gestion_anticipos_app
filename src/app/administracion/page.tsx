@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import toast, { Toaster } from "react-hot-toast";
 import * as XLSX from "xlsx";
+import { getPermisos, esPerfilProtegido } from "@/lib/permissions";
+import RevisionLegalizacionModal from "@/components/RevisionLegalizacionModal";
 
 type OrgSubcats = { [subcat: string]: string[] };
 type OrgHierarchy = { [cat: string]: { subcategorias?: OrgSubcats; cargos?: string[] } };
@@ -84,7 +86,7 @@ export default function AdministracionPage() {
     const [editingEstructuraId, setEditingEstructuraId] = useState<string | null>(null);
     const [newCentroForm, setNewCentroForm] = useState({ codigo: '', nombre: '' });
     const [newConexionForm, setNewConexionForm] = useState({ centro_costos_id: '', estructura_id: '' });
-    const [newPerfilForm, setNewPerfilForm] = useState<{email: string, nombre_completo: string, es_solicitante: boolean, es_aprobador: boolean, es_administrador: boolean, ids_programa_area: string[]}>({ email: '', nombre_completo: '', es_solicitante: false, es_aprobador: false, es_administrador: false, ids_programa_area: [] });
+    const [newPerfilForm, setNewPerfilForm] = useState<{email: string, nombre_completo: string, es_solicitante: boolean, es_aprobador: boolean, es_administrador: boolean, es_contabilidad_finanzas: boolean, ids_programa_area: string[]}>({ email: '', nombre_completo: '', es_solicitante: false, es_aprobador: false, es_administrador: false, es_contabilidad_finanzas: false, ids_programa_area: [] });
     const [editingPerfil, setEditingPerfil] = useState(false);
     const [showEstructuraDropdown, setShowEstructuraDropdown] = useState(false);
     const [addingMaestro, setAddingMaestro] = useState(false);
@@ -133,11 +135,7 @@ export default function AdministracionPage() {
     const [isRenaming, setIsRenaming] = useState(false);
 
     // Audit Modal States
-    const [showAuditModal, setShowAuditModal] = useState(false);
     const [auditAnticipo, setAuditAnticipo] = useState<any>(null);
-    const [auditObservation, setAuditObservation] = useState('');
-    const [isProcessingAudit, setIsProcessingAudit] = useState(false);
-    const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
     // Bulk Upload States
     const [showBulkModal, setShowBulkModal] = useState(false);
@@ -152,14 +150,15 @@ export default function AdministracionPage() {
         const wb = XLSX.utils.book_new();
 
         // ── Hoja 1: Plantilla de datos (solo datos del usuario, sin estructuras) ──
-        const headers = ['email', 'nombre_completo', 'es_solicitante', 'es_aprobador', 'es_administrador'];
+        const headers = ['email', 'nombre_completo', 'es_solicitante', 'es_aprobador', 'es_administrador', 'es_contabilidad_finanzas'];
         const examples = [
-            ['jperez@fundaec.org', 'Juan Pérez',   'SI', 'NO', 'NO'],
-            ['mlopez@fundaec.org', 'María López',  'SI', 'SI', 'NO'],
-            ['aadmin@fundaec.org', 'Ana Admin',     'SI', 'NO', 'SI'],
+            ['jperez@fundaec.org', 'Juan Pérez',   'SI', 'NO', 'NO', 'NO'],
+            ['mlopez@fundaec.org', 'María López',  'SI', 'SI', 'NO', 'NO'],
+            ['aadmin@fundaec.org', 'Ana Admin',     'SI', 'NO', 'SI', 'NO'],
+            ['cfinanzas@fundaec.org', 'Carlos Finanzas', 'SI', 'NO', 'NO', 'SI'],
         ];
         const ws1 = XLSX.utils.aoa_to_sheet([headers, ...examples]);
-        ws1['!cols'] = [{ wch: 32 }, { wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 18 }];
+        ws1['!cols'] = [{ wch: 32 }, { wch: 28 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 26 }];
         XLSX.utils.book_append_sheet(wb, ws1, 'Usuarios');
 
         // ── Hoja 2: Instrucciones ──
@@ -167,7 +166,7 @@ export default function AdministracionPage() {
             ['INSTRUCCIONES DE CARGA MASIVA DE USUARIOS'],
             [''],
             ['1. Completa la hoja "Usuarios" con un usuario por fila.'],
-            ['2. Los campos es_solicitante / es_aprobador / es_administrador aceptan solo: SI o NO'],
+            ['2. Los campos es_solicitante / es_aprobador / es_administrador / es_contabilidad_finanzas aceptan solo: SI o NO'],
             ['3. El email debe ser el correo institucional (@fundaec.org)'],
             ['4. No elimines ni renombres las columnas.'],
             [''],
@@ -179,6 +178,7 @@ export default function AdministracionPage() {
             ['  - Solicitante:    puede crear solicitudes de anticipo'],
             ['  - Aprobador:      puede aprobar solicitudes de otros'],
             ['  - Administrador:  acceso completo al módulo de administración'],
+            ['  - Contabilidad y Finanzas: registra desembolsos y cierra legalizaciones'],
         ];
         const ws2 = XLSX.utils.aoa_to_sheet(instrucciones);
         ws2['!cols'] = [{ wch: 80 }];
@@ -207,12 +207,13 @@ export default function AdministracionPage() {
                     const esSol = String(row['es_solicitante'] || '').trim().toUpperCase() === 'SI';
                     const esAp  = String(row['es_aprobador']   || '').trim().toUpperCase() === 'SI';
                     const esAdm = String(row['es_administrador'] || '').trim().toUpperCase() === 'SI';
+                    const esCF  = String(row['es_contabilidad_finanzas'] || '').trim().toUpperCase() === 'SI';
 
                     if (!email) { errors.push(`Fila ${rowNum}: El email es obligatorio.`); return null; }
                     if (!email.includes('@')) { errors.push(`Fila ${rowNum}: Email inválido: "${email}".`); return null; }
 
                     // Las estructuras se asignan desde el panel de asignación post-carga
-                    return { email, nombre_completo: nombre, es_solicitante: esSol, es_aprobador: esAp, es_administrador: esAdm, ids_programa_area: [] };
+                    return { email, nombre_completo: nombre, es_solicitante: esSol, es_aprobador: esAp, es_administrador: esAdm, es_contabilidad_finanzas: esCF, ids_programa_area: [] };
                 }).filter(Boolean);
 
                 setBulkErrors(errors);
@@ -228,21 +229,29 @@ export default function AdministracionPage() {
 
     const handleConfirmBulkUpload = async () => {
         if (bulkRows.length === 0) return;
+        // Un Administrador no puede sobrescribir administradores existentes ni crear nuevos
+        const filas = isGlobalAdmin
+            ? bulkRows
+            : bulkRows.filter(r => !esPerfilProtegido(perfilesAutorizados.find(p => p.email === r.email) || { email: r.email }));
+        const omitidas = bulkRows.length - filas.length;
+        if (omitidas > 0) toast(`${omitidas} fila(s) omitida(s): corresponden a administradores`);
+        if (filas.length === 0) return;
         setIsBulkUploading(true);
-        const loadingToast = toast.loading(`Cargando ${bulkRows.length} usuarios...`);
+        const loadingToast = toast.loading(`Cargando ${filas.length} usuarios...`);
         try {
             const { error } = await supabase
                 .from('perfiles_autorizados')
-                .upsert(bulkRows.map(r => ({
+                .upsert(filas.map(r => ({
                     email: r.email,
                     nombre_completo: r.nombre_completo,
                     es_solicitante: r.es_solicitante,
                     es_aprobador: r.es_aprobador,
-                    es_administrador: r.es_administrador,
+                    es_administrador: isGlobalAdmin ? r.es_administrador : false,
+                    es_contabilidad_finanzas: r.es_contabilidad_finanzas,
                     ids_programa_area: [] // Se asignan post-carga desde el panel de asignación
                 })), { onConflict: 'email', ignoreDuplicates: false });
             if (error) throw error;
-            toast.success(`¡${bulkRows.length} usuario(s) cargados! Ahora asigna sus estructuras.`, { id: loadingToast });
+            toast.success(`¡${filas.length} usuario(s) cargados! Ahora asigna sus estructuras.`, { id: loadingToast });
             setShowBulkModal(false);
             setBulkRows([]);
             setBulkErrors([]);
@@ -535,14 +544,21 @@ export default function AdministracionPage() {
     const handleSavePerfilAutorizado = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newPerfilForm.email || newPerfilForm.ids_programa_area.length === 0) return;
+        const emailNormalizado = newPerfilForm.email.toLowerCase().trim();
+        const existente = perfilesAutorizados.find(p => p.email === emailNormalizado);
+        if (!isGlobalAdmin && existente && esPerfilProtegido(existente)) {
+            toast.error("Solo el Administrador Global puede modificar a un administrador");
+            return;
+        }
         setAddingMaestro(true);
         try {
             const payload = {
-                email: newPerfilForm.email.toLowerCase().trim(),
+                email: emailNormalizado,
                 nombre_completo: newPerfilForm.nombre_completo.trim(),
                 es_solicitante: newPerfilForm.es_solicitante,
                 es_aprobador: newPerfilForm.es_aprobador,
-                es_administrador: newPerfilForm.es_administrador,
+                es_administrador: isGlobalAdmin ? newPerfilForm.es_administrador : false,
+                es_contabilidad_finanzas: newPerfilForm.es_contabilidad_finanzas,
                 ids_programa_area: newPerfilForm.ids_programa_area
             };
             if (editingPerfil) {
@@ -554,7 +570,7 @@ export default function AdministracionPage() {
                 if (error) throw error;
                 toast.success("Perfil autorizado añadido");
             }
-            setNewPerfilForm({ email: '', nombre_completo: '', es_solicitante: false, es_aprobador: false, es_administrador: false, ids_programa_area: [] });
+            setNewPerfilForm({ email: '', nombre_completo: '', es_solicitante: false, es_aprobador: false, es_administrador: false, es_contabilidad_finanzas: false, ids_programa_area: [] });
             setEditingPerfil(false);
             fetchData();
         } catch (err: any) {
@@ -571,6 +587,7 @@ export default function AdministracionPage() {
             es_solicitante: p.es_solicitante || false,
             es_aprobador: p.es_aprobador || false,
             es_administrador: p.es_administrador || false,
+            es_contabilidad_finanzas: p.es_contabilidad_finanzas || false,
             ids_programa_area: p.ids_programa_area || []
         });
         setEditingPerfil(true);
@@ -581,11 +598,16 @@ export default function AdministracionPage() {
     };
 
     const handleCancelEditPerfil = () => {
-        setNewPerfilForm({ email: '', nombre_completo: '', es_solicitante: false, es_aprobador: false, es_administrador: false, ids_programa_area: [] });
+        setNewPerfilForm({ email: '', nombre_completo: '', es_solicitante: false, es_aprobador: false, es_administrador: false, es_contabilidad_finanzas: false, ids_programa_area: [] });
         setEditingPerfil(false);
     };
 
     const handleDeletePerfilAutorizado = async (email: string) => {
+        const perfil = perfilesAutorizados.find(p => p.email === email);
+        if (!isGlobalAdmin && esPerfilProtegido(perfil || { email })) {
+            toast.error("Solo el Administrador Global puede eliminar a un administrador");
+            return;
+        }
         if (!window.confirm("¿Está seguro de eliminar este perfil autorizado?")) return;
         try {
             const { error } = await supabase.from('perfiles_autorizados').delete().eq('email', email);
@@ -597,69 +619,16 @@ export default function AdministracionPage() {
         }
     };
 
-    const handleOpenAudit = (anticipo: any) => {
-        setAuditAnticipo(anticipo);
-        setAuditObservation('');
-        setShowAuditModal(true);
-    };
 
-    const handleAprobarAudit = async () => {
-        if (!auditAnticipo) return;
-        setIsProcessingAudit(true);
-        const loadingToast = toast.loading("Finalizando legalización...");
-        try {
-            const { error } = await supabase.from('anticipos').update({ status: 'Finalizado' }).eq('id', auditAnticipo.id);
-            if (error) throw error;
-            toast.success("Legalización aprobada y finalizada", { id: loadingToast });
-            setShowAuditModal(false);
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            toast.error("Error al aprobar", { id: loadingToast });
-        } finally {
-            setIsProcessingAudit(false);
-        }
-    };
-
-    const handleRechazarAudit = async () => {
-        if (!auditAnticipo || !auditObservation.trim()) {
-            toast.error("Las observaciones son requeridas para rechazar");
-            return;
-        }
-        setIsProcessingAudit(true);
-        const loadingToast = toast.loading("Rechazando legalización...");
-        try {
-            const { error } = await supabase.from('anticipos').update({ 
-                status: 'Rechazado',
-                motivo_rechazo: auditObservation
-            }).eq('id', auditAnticipo.id);
-            if (error) throw error;
-            toast.success("Legalización rechazada", { id: loadingToast });
-            setShowAuditModal(false);
-            fetchData();
-        } catch (err) {
-            console.error(err);
-            toast.error("Error al rechazar", { id: loadingToast });
-        } finally {
-            setIsProcessingAudit(false);
-        }
-    };
-
-    const isGlobalAdmin = user?.profile?.role === 'Administrador Global' || user?.email === 'nzapata@fundaec.org';
+    const permisos = getPermisos(user);
+    const isGlobalAdmin = permisos.esAdminGlobal;
+    const puedeEditarPerfil = (p: any) => isGlobalAdmin || !esPerfilProtegido(p);
 
     useEffect(() => {
-        if (!authLoading && !isGlobalAdmin) {
+        if (!authLoading && !permisos.puedeAdministrar) {
             router.push('/');
         }
-    }, [isGlobalAdmin, authLoading, router]);
-
-    if (authLoading || !isGlobalAdmin) {
-        return (
-            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Clock size={40} className="animate-spin text-primary" />
-            </div>
-        );
-    }
+    }, [permisos.puedeAdministrar, authLoading, router]);
 
     const dynamicHierarchy = React.useMemo(() => {
         const hierarchy: OrgHierarchy = JSON.parse(JSON.stringify(ORG_HIERARCHY));
@@ -691,6 +660,14 @@ export default function AdministracionPage() {
         });
         return hierarchy;
     }, [programasProyectos]);
+
+    if (authLoading || !permisos.puedeAdministrar) {
+        return (
+            <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Clock size={40} className="animate-spin text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '40px', paddingTop: '40px' }}>
@@ -822,6 +799,7 @@ export default function AdministracionPage() {
                                                     {perfil.es_solicitante && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#eff6ff', color: '#2563eb' }}>Solicitante</span>}
                                                     {perfil.es_aprobador   && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#ecfdf5', color: '#059669' }}>Aprobador</span>}
                                                     {perfil.es_administrador && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#fef2f2', color: '#dc2626' }}>Admin</span>}
+                                                    {perfil.es_contabilidad_finanzas && <span style={{ padding: '2px 10px', borderRadius: '10px', fontSize: '11px', fontWeight: 600, backgroundColor: '#fffbeb', color: '#b45309' }}>Contabilidad y Finanzas</span>}
                                                 </div>
                                             </div>
                                             {/* Cascade selectors */}
@@ -1094,14 +1072,27 @@ export default function AdministracionPage() {
                                         />
                                         <ShieldCheck size={16} color="#10b981" /> Aprobador
                                     </label>
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}>
-                                        <input 
+                                    <label
+                                        title={isGlobalAdmin ? undefined : 'Solo el Administrador Global puede asignar este rol'}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: isGlobalAdmin ? 'pointer' : 'not-allowed', fontWeight: '500', opacity: isGlobalAdmin ? 1 : 0.5 }}
+                                    >
+                                        <input
                                             type="checkbox"
                                             checked={newPerfilForm.es_administrador}
+                                            disabled={!isGlobalAdmin}
                                             onChange={(e) => setNewPerfilForm({...newPerfilForm, es_administrador: e.target.checked})}
                                             style={{ width: '16px', height: '16px' }}
                                         />
                                         <ShieldCheck size={16} color="#ef4444" /> Administrador
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', cursor: 'pointer', fontWeight: '500' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={newPerfilForm.es_contabilidad_finanzas}
+                                            onChange={(e) => setNewPerfilForm({...newPerfilForm, es_contabilidad_finanzas: e.target.checked})}
+                                            style={{ width: '16px', height: '16px' }}
+                                        />
+                                        <ShieldCheck size={16} color="#d97706" /> Contabilidad y Finanzas
                                     </label>
                                 </div>
                             </div>
@@ -1155,7 +1146,8 @@ export default function AdministracionPage() {
                                                             {p.es_solicitante && <span style={{ padding: "4px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 600, backgroundColor: '#eff6ff', color: '#2563eb' }}>Solicitante</span>}
                                                             {p.es_aprobador && <span style={{ padding: "4px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 600, backgroundColor: '#ecfdf5', color: '#10b981' }}>Aprobador</span>}
                                                             {p.es_administrador && <span style={{ padding: "4px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 600, backgroundColor: '#fef2f2', color: '#ef4444' }}>Administrador</span>}
-                                                            {!p.es_solicitante && !p.es_aprobador && !p.es_administrador && <span style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>Sin rol</span>}
+                                                            {p.es_contabilidad_finanzas && <span style={{ padding: "4px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 600, backgroundColor: '#fffbeb', color: '#b45309' }}>Contabilidad y Finanzas</span>}
+                                                            {!p.es_solicitante && !p.es_aprobador && !p.es_administrador && !p.es_contabilidad_finanzas &&<span style={{ color: 'var(--muted-foreground)', fontSize: '12px' }}>Sin rol</span>}
                                                         </div>
                                                     </td>
                                                     <td style={{ padding: '16px 20px' }}>
@@ -1168,14 +1160,18 @@ export default function AdministracionPage() {
                                                         </div>
                                                     </td>
                                                     <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                                                            <button onClick={() => handleEditPerfilClick(p)} title="Editar Perfil" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: '4px' }}>
-                                                                <Pencil size={18} />
-                                                            </button>
-                                                            <button onClick={() => handleDeletePerfilAutorizado(p.email)} title="Eliminar Perfil" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
-                                                                <Trash2 size={18} />
-                                                            </button>
-                                                        </div>
+                                                        {puedeEditarPerfil(p) ? (
+                                                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                                                <button onClick={() => handleEditPerfilClick(p)} title="Editar Perfil" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: '4px' }}>
+                                                                    <Pencil size={18} />
+                                                                </button>
+                                                                <button onClick={() => handleDeletePerfilAutorizado(p.email)} title="Eliminar Perfil" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '4px' }}>
+                                                                    <Trash2 size={18} />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span title="Solo el Administrador Global puede modificar administradores" style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>Protegido</span>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
@@ -1784,8 +1780,8 @@ export default function AdministracionPage() {
                                                 </span>
                                             </td>
                                             <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                                                {(a.status === 'Legalizado' || a.status === 'En Revisión') && (
-                                                    <button onClick={() => handleOpenAudit(a)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--primary)', backgroundColor: 'white', color: 'var(--primary)', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                                {a.metadata_legalizacion?.soportes?.length > 0 && (
+                                                    <button onClick={() => setAuditAnticipo(a)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--primary)', backgroundColor: 'white', color: 'var(--primary)', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
                                                         Ver Soportes
                                                     </button>
                                                 )}
@@ -1950,79 +1946,14 @@ export default function AdministracionPage() {
                     </div>
                 </div>
             )}
-            {/* Modal de Auditoría de Soportes */}
-            {showAuditModal && auditAnticipo && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-                    <div className="card" style={{ width: '100%', maxWidth: '700px', backgroundColor: 'var(--background)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
-                            <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '800' }}>Auditoría de Soportes</h3>
-                            <button onClick={() => setShowAuditModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted-foreground)' }}>
-                                <X size={24} />
-                            </button>
-                        </div>
-                        
-                        <div style={{ overflowY: 'auto', paddingRight: '4px', marginBottom: '20px', flex: 1 }}>
-                            <div style={{ marginBottom: '20px', backgroundColor: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                                <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '4px' }}>Anticipo #ANT-{String(auditAnticipo.id).slice(-4)}</div>
-                                <div style={{ fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>{auditAnticipo.profiles?.full_name}</div>
-                                <div style={{ fontSize: '14px', color: '#475569', marginTop: '4px' }}>{auditAnticipo.motivo}</div>
-                            </div>
-
-                            <h4 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '12px', color: '#1e293b' }}>Documentos</h4>
-                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
-                                {auditAnticipo.metadata_legalizacion?.soportes?.filter((s: any) => s.type.includes('excel') || s.type.includes('spreadsheet') || s.description === 'Cuenta de Cobro Firmada' || s.type.includes('pdf') || s.type.includes('word') || s.type.includes('document')).map((s: any, i: number) => (
-                                    <a key={i} href={s.url} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', textDecoration: 'none', color: '#1d4ed8', fontWeight: '600', fontSize: '13px' }}>
-                                        <FileText size={18} />
-                                        {s.description || 'Documento'}
-                                    </a>
-                                ))}
-                                {(!auditAnticipo.metadata_legalizacion?.soportes || auditAnticipo.metadata_legalizacion?.soportes.filter((s: any) => s.type.includes('excel') || s.type.includes('spreadsheet') || s.description === 'Cuenta de Cobro Firmada' || s.type.includes('pdf') || s.type.includes('word') || s.type.includes('document')).length === 0) && (
-                                    <span style={{ fontSize: '13px', color: '#64748b' }}>No hay documentos.</span>
-                                )}
-                            </div>
-
-                            <h4 style={{ fontSize: '15px', fontWeight: '700', marginBottom: '12px', color: '#1e293b' }}>Galería de Facturas</h4>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-                                {auditAnticipo.metadata_legalizacion?.soportes?.filter((s: any) => s.type.startsWith('image/')).map((s: any, i: number) => (
-                                    <div key={i} onClick={() => setSelectedImage(s.url)} style={{ cursor: 'pointer', borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', aspectRatio: '1', backgroundColor: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <img src={s.url} alt={s.description} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    </div>
-                                ))}
-                                {(!auditAnticipo.metadata_legalizacion?.soportes || auditAnticipo.metadata_legalizacion?.soportes.filter((s: any) => s.type.startsWith('image/')).length === 0) && (
-                                    <span style={{ fontSize: '13px', color: '#64748b', gridColumn: '1 / -1' }}>No hay imágenes cargadas.</span>
-                                )}
-                            </div>
-
-                            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '600', color: '#475569' }}>Observaciones (Obligatorio para rechazo)</label>
-                            <textarea
-                                rows={3}
-                                value={auditObservation}
-                                onChange={(e) => setAuditObservation(e.target.value)}
-                                placeholder="Indica aquí si falta algún soporte o hay alguna inconsistencia..."
-                                style={{ width: '100%', padding: '12px 14px', borderRadius: '12px', border: '1px solid #e2e8f0', fontSize: '14px', outline: 'none', resize: 'none' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0, borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
-                            <button onClick={handleRechazarAudit} disabled={isProcessingAudit} style={{ padding: '12px 20px', borderRadius: '12px', border: '1px solid #fecaca', backgroundColor: '#fef2f2', color: '#dc2626', fontWeight: '600', cursor: isProcessingAudit ? 'not-allowed' : 'pointer', opacity: isProcessingAudit ? 0.7 : 1 }}>
-                                Rechazar
-                            </button>
-                            <button onClick={handleAprobarAudit} disabled={isProcessingAudit} style={{ padding: '12px 24px', borderRadius: '12px', border: 'none', backgroundColor: '#16a34a', color: 'white', fontWeight: '700', cursor: isProcessingAudit ? 'not-allowed' : 'pointer', opacity: isProcessingAudit ? 0.7 : 1 }}>
-                                Aprobar Legalización
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal para ver imagen grande */}
-            {selectedImage && (
-                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: '20px' }} onClick={() => setSelectedImage(null)}>
-                    <img src={selectedImage} alt="Preview" style={{ maxWidth: '100%', maxHeight: '90vh', objectFit: 'contain', borderRadius: '8px' }} />
-                    <button onClick={() => setSelectedImage(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
-                        <X size={32} />
-                    </button>
-                </div>
+            {/* Consulta de soportes: la revisión la hacen el aprobador y Contabilidad y Finanzas */}
+            {auditAnticipo && (
+                <RevisionLegalizacionModal
+                    anticipo={auditAnticipo}
+                    titulo="Soportes de la legalización"
+                    readOnly
+                    onClose={() => setAuditAnticipo(null)}
+                />
             )}
 
             {/* Modal de Carga Masiva */}
@@ -2091,7 +2022,8 @@ export default function AdministracionPage() {
                                                             {r.es_solicitante && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#eff6ff', color: '#2563eb' }}>Sol.</span>}
                                                             {r.es_aprobador && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#ecfdf5', color: '#10b981' }}>Apr.</span>}
                                                             {r.es_administrador && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#fef2f2', color: '#ef4444' }}>Admin.</span>}
-                                                            {!r.es_solicitante && !r.es_aprobador && !r.es_administrador && <span style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>Sin rol</span>}
+                                                            {r.es_contabilidad_finanzas && <span style={{ padding: '2px 7px', borderRadius: '10px', fontSize: '10px', fontWeight: 700, backgroundColor: '#fffbeb', color: '#b45309' }}>Cont. y Fin.</span>}
+                                                            {!r.es_solicitante && !r.es_aprobador && !r.es_administrador && !r.es_contabilidad_finanzas &&<span style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>Sin rol</span>}
                                                         </div>
                                                     </td>
                                                     <td style={{ padding: '10px 14px' }}>

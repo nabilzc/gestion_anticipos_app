@@ -16,6 +16,8 @@ import {
 import toast, { Toaster } from "react-hot-toast";
 import { formatCurrency, formatDate } from "@/lib/utils/businessLogic";
 import { sendAnticipoStatusUpdate } from "@/app/actions/sendEmail";
+import { getPermisos } from "@/lib/permissions";
+import LegalizacionesPorRevisar from "@/components/LegalizacionesPorRevisar";
 
 export default function AprobacionesPage() {
     const { user } = useAuth();
@@ -30,19 +32,28 @@ export default function AprobacionesPage() {
     const [isRejectCelebrating, setIsRejectCelebrating] = useState(false);
     const [showApproveModal, setShowApproveModal] = useState(false);
     const [approveId, setApproveId] = useState<number | null>(null);
+    const [tab, setTab] = useState<'solicitudes' | 'legalizaciones'>('solicitudes');
+    const [legalizacionesCount, setLegalizacionesCount] = useState(0);
+
+    const permisos = getPermisos(user);
 
     const fetchPendientes = async () => {
         setLoading(true);
         try {
-            // Fetch only those with status 'Enviado' as requested
-            const { data, error } = await supabase
+            let query = supabase
                 .from("anticipos")
                 .select(`
                     *,
                     profiles:solicitante_id (full_name, email)
                 `)
-                .eq("status", "Enviado")
-                .order("created_at", { ascending: false });
+                .eq("status", "Enviado");
+
+            // El Administrador Global ve todas; cada aprobador solo las que tiene asignadas
+            if (!permisos.esAdminGlobal) {
+                query = query.eq("aprobador_email", (user?.email || "").toLowerCase());
+            }
+
+            const { data, error } = await query.order("created_at", { ascending: false });
 
             if (error) throw error;
             setAnticipos(data || []);
@@ -55,7 +66,7 @@ export default function AprobacionesPage() {
     };
 
     useEffect(() => {
-        if (user) {
+        if (user && permisos.puedeAprobar) {
             fetchPendientes();
         }
     }, [user]);
@@ -158,17 +169,13 @@ export default function AprobacionesPage() {
         (a.id || "").toString().includes(searchTerm)
     );
 
-    // Filter access by domain (future requirement)
-    // const canAccess = user?.email?.endsWith("@fundaec.org");
-    const canAccess = true; // Allow current user for now as requested
-
-    if (!canAccess) {
+    if (!permisos.puedeAprobar) {
         return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
                 <AlertCircle size={48} color="#ef4444" style={{ marginBottom: '16px' }} />
                 <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Acceso Restringido</h1>
                 <p style={{ color: 'var(--muted-foreground)', maxWidth: '400px', marginTop: '8px' }}>
-                    Esta sección solo está disponible para usuarios autorizados con dominio @fundaec.org.
+                    No tienes permisos de Aprobador en tu perfil. Contacta al Administrador.
                 </p>
             </div>
         );
@@ -185,11 +192,36 @@ export default function AprobacionesPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#f0fdf4', padding: '8px 16px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
                     <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#22c55e' }}></div>
-                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>{anticipos.length} Pendientes</span>
+                    <span style={{ fontSize: '14px', fontWeight: '600', color: '#166534' }}>{anticipos.length + legalizacionesCount} Pendientes</span>
                 </div>
             </div>
 
-            <div className="card" style={{ padding: '0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: '#f1f5f9', borderRadius: '14px', padding: '4px' }}>
+                {([
+                    { key: 'solicitudes', label: 'Solicitudes de anticipo', count: anticipos.length },
+                    { key: 'legalizaciones', label: 'Legalizaciones por revisar', count: legalizacionesCount },
+                ] as const).map(t => (
+                    <button
+                        key={t.key}
+                        onClick={() => setTab(t.key)}
+                        style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: tab === t.key ? '700' : '500', background: tab === t.key ? '#fff' : 'transparent', color: tab === t.key ? '#1e293b' : '#64748b', boxShadow: tab === t.key ? '0 2px 8px rgba(0,0,0,0.08)' : 'none' }}
+                    >
+                        {t.label} {t.count > 0 && <span style={{ marginLeft: '6px', background: '#0d9488', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '2px 7px', borderRadius: '10px' }}>{t.count}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {/* Montado siempre para que el contador de la pestaña esté disponible */}
+            <div className="card" style={{ padding: '0', overflow: 'hidden', display: tab === 'legalizaciones' ? 'block' : 'none' }}>
+                <LegalizacionesPorRevisar
+                    modo="aprobador"
+                    revisorEmail={(user?.email || '').toLowerCase()}
+                    filtroAprobadorEmail={permisos.esAdminGlobal ? null : (user?.email || '')}
+                    onCount={setLegalizacionesCount}
+                />
+            </div>
+
+            <div className="card" style={{ padding: '0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)', display: tab === 'solicitudes' ? 'block' : 'none' }}>
                 <div style={{ padding: '20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ position: 'relative', flex: 1 }}>
                         <Search size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }} />

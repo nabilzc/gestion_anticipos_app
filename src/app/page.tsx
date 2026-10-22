@@ -39,7 +39,7 @@ export default function Home() {
         // 1. Fetch KPIs
         const { data: anticipos, error } = await supabase
           .from("anticipos")
-          .select("id, monto_total, status, created_at");
+          .select("id, monto_total, status, created_at, fecha_pago, fecha_ejecucion");
 
         if (error) throw error;
 
@@ -72,6 +72,8 @@ export default function Home() {
             motivo, 
             monto_total, 
             status,
+            fecha_pago,
+            fecha_ejecucion,
             profiles (full_name)
           `)
           .order("created_at", { ascending: false })

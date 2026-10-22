@@ -29,7 +29,8 @@ No hay tests automatizados. Los archivos `*.js` sueltos en la raíz (`check_db*.
 - `src/context/AuthContext.tsx` maneja la sesión (Google OAuth vía Supabase). En cada login cruza `profiles` con `perfiles_autorizados` (la lista blanca administrada desde `/administracion`) y recalcula `role`, `es_solicitante`, `es_aprobador`. Si el email no está en `perfiles_autorizados`, cierra sesión.
 - `nzapata@fundaec.org` tiene un pase hardcodeado como `Administrador Global`: su `user.profile` es un objeto mínimo y **no** se carga desde la base (no trae `full_name`, `programa`, etc.).
 - `src/middleware.ts` solo verifica que exista la cookie `sb-auth-token` en algunas rutas; no valida roles.
-- El `Sidebar` muestra todos los módulos a todos los usuarios (solo oculta Administración). La validación de rol por página es inconsistente; aún no existe el rol Finanzas.
+- Los permisos se calculan en `src/lib/permissions.ts` (`getPermisos`) y los usan el `Sidebar` y cada página. Roles en `perfiles_autorizados`: `es_solicitante`, `es_aprobador`, `es_administrador`, `es_contabilidad_finanzas` (este último solo existe ahí, no en `profiles`). El Administrador Global ve todo; un Administrador entra a Administración pero no puede asignar el rol Administrador ni modificar administradores (`esPerfilProtegido`).
+- Estas restricciones son solo de interfaz: las políticas RLS de Supabase todavía no las reflejan.
 
 ### Ciclo de vida de un anticipo
 
@@ -39,13 +40,17 @@ Todo vive en la tabla `anticipos` (con `anticipo_items` para el detalle de gasto
 |---|---|---|
 | `Borrador` / `Enviado` | `solicitudes/nueva` | Envía correo al solicitante y al aprobador (`aprobador_email`) |
 | `Aprobado` / `Rechazado` | `aprobaciones` | Lista todos los `Enviado`, sin filtrar por aprobador |
-| `Desembolsado` | `desembolsos` | Guarda `fecha_pago` y `comprobante_id` |
-| `En Revisión` | `legalizaciones/[id]` | Sube soportes al bucket `legalizaciones` de Storage y guarda `metadata_legalizacion` (JSONB) |
-| `Finalizado` / `Rechazado` | `administracion` (pestaña de auditoría) | Un rechazo aquí deja al solicitante sin forma de corregir |
+| `Desembolsado` | `desembolsos` (Contabilidad y Finanzas) | Guarda `fecha_pago` y `comprobante_id`; correo al trabajador y al aprobador |
+| `En Revisión` (revisión del aprobador) | `legalizaciones/[id]` | Sube soportes al bucket `legalizaciones` y guarda `metadata_legalizacion` (JSONB): `soportes`, `total_legalizado`; correo al aprobador |
+| `Revisión Finanzas` / `Devuelto` | `aprobaciones` (pestaña legalizaciones) | |
+| `Cerrado` / `Devuelto` | `desembolsos` (pestaña cierre) | |
 
-- **Gastos sin anticipo** usan la misma tabla con `tipo = 'legalizacion_directa'` y nacen en `En Revisión` (`legalizaciones/directa/*`). Los anticipos normales tienen `tipo` NULL.
-- Hay estados heredados (`Abierto`, `Legalizado`, `Cerrado`) que algunas consultas todavía incluyen.
-- `isAnticipoVencido()` en `src/lib/utils/businessLogic.ts` define el plazo: 5 días hábiles desde `fecha_ejecucion`.
+- Las transiciones de revisión están centralizadas en `src/lib/legalizacion.ts` (validan el estado de origen para evitar doble proceso) y la UI de revisión en `src/components/LegalizacionesPorRevisar.tsx` + `RevisionLegalizacionModal.tsx`. Administración solo consulta soportes.
+- `Devuelto` vuelve al trabajador: `metadata_legalizacion.devolucion` guarda quién, motivo y fecha; al reenviar se reemplazan los soportes y pasa de nuevo por el aprobador.
+- Si `total_legalizado < monto_total`, el trabajador debe adjuntar un soporte con `categoria: 'reintegro'`.
+- **Gastos sin anticipo** usan la misma tabla con `tipo = 'legalizacion_directa'`, nacen en `En Revisión` y siguen el mismo flujo de revisión (`legalizaciones/directa/*`). Los anticipos normales tienen `tipo` NULL.
+- `Finalizado` y `Legalizado` son estados heredados equivalentes a `Cerrado`; `Rechazado` se usa solo para solicitudes rechazadas antes del desembolso. Constantes en `ESTADO` de `businessLogic.ts`.
+- `isAnticipoVencido()` define el plazo: 5 días hábiles desde `fecha_pago`. Las fechas `YYYY-MM-DD` se parsean como hora local (Colombia) para no correrse un día.
 
 ### Base de datos
 
@@ -59,4 +64,4 @@ Todo vive en la tabla `anticipos` (con `anticipo_items` para el detalle de gasto
 
 ### Correos
 
-`sendEmail.ts` usa el remitente de prueba `onboarding@resend.dev`, que solo entrega a la cuenta dueña de Resend, hasta que se verifique el dominio `fundaec.org`. Las notificaciones de legalización van a `contabilidad@fundaec.org`, hardcodeado.
+`sendEmail.ts` usa el remitente de prueba `onboarding@resend.dev`, que solo entrega a la cuenta dueña de Resend, hasta que se verifique el dominio `fundaec.org`. Los avisos a Contabilidad y Finanzas van a los correos con `es_contabilidad_finanzas` (respaldo: `contabilidad@fundaec.org`). Los textos de usuario se escapan con `esc()`; el enlace a la app llega como `app_url` desde el cliente (`window.location.origin`).

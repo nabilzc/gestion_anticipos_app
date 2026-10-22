@@ -13,11 +13,14 @@ import {
     ArrowLeftRight,
     Loader2,
     Calendar,
-    Hash
+    Hash,
+    AlertCircle
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import { formatCurrency, formatDate } from "@/lib/utils/businessLogic";
 import { sendDisbursementNotification } from "@/app/actions/sendEmail";
+import { getPermisos } from "@/lib/permissions";
+import LegalizacionesPorRevisar from "@/components/LegalizacionesPorRevisar";
 
 export default function DesembolsosPage() {
     const { user } = useAuth();
@@ -30,6 +33,8 @@ export default function DesembolsosPage() {
     const [numeroComprobante, setNumeroComprobante] = useState("");
     const [isProcessing, setIsProcessing] = useState(false);
     const [isCelebrating, setIsCelebrating] = useState(false);
+    const [tab, setTab] = useState<'pagos' | 'cierre'>('pagos');
+    const [cierreCount, setCierreCount] = useState(0);
 
     const fetchAprobados = async () => {
         setLoading(true);
@@ -54,8 +59,10 @@ export default function DesembolsosPage() {
         }
     };
 
+    const permisos = getPermisos(user);
+
     useEffect(() => {
-        if (user) {
+        if (user && permisos.esContabilidadFinanzas) {
             fetchAprobados();
         }
     }, [user]);
@@ -98,7 +105,9 @@ export default function DesembolsosPage() {
                     id: `#ANT-${String(selectedAnticipo.id).padStart(4, '0')}`,
                     solicitante_nombre: selectedAnticipo.profiles.full_name,
                     solicitante_email: selectedAnticipo.profiles.email,
-                    comprobante_id: numeroComprobante
+                    aprobador_email: selectedAnticipo.aprobador_email,
+                    comprobante_id: numeroComprobante,
+                    app_url: window.location.origin
                 }).catch(err => console.error("Error sending disbursement email:", err));
             }
 
@@ -121,6 +130,18 @@ export default function DesembolsosPage() {
         (a.id || "").toString().includes(searchTerm)
     );
 
+    if (!permisos.esContabilidadFinanzas) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', textAlign: 'center' }}>
+                <AlertCircle size={48} color="#ef4444" style={{ marginBottom: '16px' }} />
+                <h1 style={{ fontSize: '24px', fontWeight: '700' }}>Acceso Restringido</h1>
+                <p style={{ color: 'var(--muted-foreground)', maxWidth: '400px', marginTop: '8px' }}>
+                    Esta sección es exclusiva del equipo de Contabilidad y Finanzas.
+                </p>
+            </div>
+        );
+    }
+
     return (
         <div style={{ maxWidth: '1100px', margin: '0 auto', paddingBottom: '40px' }}>
             <Toaster position="top-right" />
@@ -129,7 +150,7 @@ export default function DesembolsosPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
                 <div>
                     <h1 style={{ fontSize: '26px', fontWeight: '800', color: 'var(--foreground)', letterSpacing: '-0.02em', marginBottom: '4px' }}>Módulo de Desembolsos</h1>
-                    <p style={{ fontSize: '15px', color: 'var(--muted-foreground)' }}>Gestión de pagos para solicitudes aprobadas</p>
+                    <p style={{ fontSize: '15px', color: 'var(--muted-foreground)' }}>Contabilidad y Finanzas: pagos de anticipos aprobados y cierre de legalizaciones</p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#eff6ff', padding: '8px 16px', borderRadius: '12px', border: '1px solid #dbeafe' }}>
                     <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#2563eb' }}></div>
@@ -137,8 +158,33 @@ export default function DesembolsosPage() {
                 </div>
             </div>
 
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', background: '#f1f5f9', borderRadius: '14px', padding: '4px' }}>
+                {([
+                    { key: 'pagos', label: 'Pagos pendientes', count: anticipos.length },
+                    { key: 'cierre', label: 'Legalizaciones por cerrar', count: cierreCount },
+                ] as const).map(t => (
+                    <button
+                        key={t.key}
+                        onClick={() => setTab(t.key)}
+                        style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: 'none', cursor: 'pointer', fontSize: '14px', fontWeight: tab === t.key ? '700' : '500', background: tab === t.key ? '#fff' : 'transparent', color: tab === t.key ? '#1e293b' : '#64748b', boxShadow: tab === t.key ? '0 2px 8px rgba(0,0,0,0.08)' : 'none' }}
+                    >
+                        {t.label} {t.count > 0 && <span style={{ marginLeft: '6px', background: t.key === 'pagos' ? '#2563eb' : '#d97706', color: '#fff', fontSize: '11px', fontWeight: '800', padding: '2px 7px', borderRadius: '10px' }}>{t.count}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {/* Montado siempre para que el contador de la pestaña esté disponible */}
+            <div className="card" style={{ padding: '0', overflow: 'hidden', display: tab === 'cierre' ? 'block' : 'none' }}>
+                <LegalizacionesPorRevisar
+                    modo="finanzas"
+                    revisorEmail={(user?.email || '').toLowerCase()}
+                    filtroAprobadorEmail={null}
+                    onCount={setCierreCount}
+                />
+            </div>
+
             {/* Main Content Table */}
-            <div className="card" style={{ padding: '0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)' }}>
+            <div className="card" style={{ padding: '0', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)', display: tab === 'pagos' ? 'block' : 'none' }}>
                 <div style={{ padding: '20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{ position: 'relative', flex: 1 }}>
                         <Search size={20} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)' }} />

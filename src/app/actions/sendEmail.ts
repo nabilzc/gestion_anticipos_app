@@ -4,6 +4,56 @@ import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Remitente de prueba de Resend: solo entrega a la cuenta dueña hasta verificar fundaec.org
+const FROM = 'FUNDAEC Anticipos <onboarding@resend.dev>';
+const CONTABILIDAD_FALLBACK = 'contabilidad@fundaec.org';
+
+const esc = (value: unknown): string =>
+    String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+const cop = (valor: number) => `$${(Number(valor) || 0).toLocaleString('es-CO')}`;
+
+function plantilla(opts: { titulo: string; color: string; cuerpo: string; boton?: { texto: string; url: string } }) {
+    return `
+        <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b;">
+            <h1 style="color: ${opts.color}; text-align: center; font-size: 22px; margin-bottom: 24px;">${opts.titulo}</h1>
+            <div style="background-color: #f8fafc; padding: 24px; border-radius: 8px; border-left: 4px solid ${opts.color}; font-size: 15px; line-height: 1.6; color: #334155;">
+                ${opts.cuerpo}
+            </div>
+            ${opts.boton ? `
+            <div style="text-align: center; margin-top: 24px;">
+                <a href="${esc(opts.boton.url)}" style="display: inline-block; background: ${opts.color}; color: #ffffff; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 700;">${esc(opts.boton.texto)}</a>
+            </div>` : ''}
+            <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 32px;">
+                <p>© ${new Date().getFullYear()} FUNDAEC - Gestión Administrativa y Financiera</p>
+                <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+            </div>
+        </div>
+    `;
+}
+
+async function enviar(to: (string | null | undefined)[], subject: string, html: string) {
+    if (!process.env.RESEND_API_KEY) {
+        console.error("RESEND_API_KEY is missing");
+        return { success: false, error: "Configuration error" };
+    }
+    const destinatarios = Array.from(new Set(to.filter((e): e is string => !!e && e.includes('@'))));
+    if (destinatarios.length === 0) return { success: false, error: "Sin destinatarios" };
+    try {
+        const { data, error } = await resend.emails.send({ from: FROM, to: destinatarios, subject, html });
+        if (error) throw error;
+        return { success: true, id: data?.id };
+    } catch (error: any) {
+        console.error(`Email Error (${subject}):`, error);
+        return { success: false, error: error.message };
+    }
+}
+
 interface EmailData {
     id?: string;
     solicitante_nombre: string;
@@ -169,172 +219,118 @@ export async function sendDisbursementNotification(data: {
     id: string;
     solicitante_nombre: string;
     solicitante_email: string;
+    aprobador_email?: string | null;
     comprobante_id: string;
+    app_url: string;
 }) {
-    if (!process.env.RESEND_API_KEY) {
-        console.error("RESEND_API_KEY is missing");
-        return { success: false, error: "Configuration error" };
-    }
-
-    const { id, solicitante_nombre, solicitante_email, comprobante_id } = data;
-
-    const html = `
-        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b;">
-            <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #2563eb; margin-bottom: 8px;">¡Desembolso Realizado!</h1>
-                <p style="color: #64748b;">Tu solicitud ha sido pagada oficialmente</p>
-            </div>
-
-            <div style="background-color: #f0fdf4; padding: 24px; border-radius: 8px; border-left: 4px solid #16a34a; margin-bottom: 24px;">
-                <p style="font-size: 16px; line-height: 1.6; color: #334155; margin-bottom: 12px;">
-                    Hola <strong>${solicitante_nombre}</strong>,<br><br>
-                    Tu desembolso ha sido realizado con éxito. 
-                </p>
-                <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #dcfce7; margin-bottom: 16px;">
-                    <p style="margin: 0; font-size: 14px;"><strong>Número de Operación:</strong> ${comprobante_id}</p>
-                </div>
-                <p style="font-size: 14px; color: #166534; margin: 0;">
-                    <strong>Importante:</strong> Recuerda que tienes 5 días hábiles para legalizar tus gastos después de la fecha de ejecución establecida en tu solicitud.
-                </p>
-            </div>
-
-            <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 40px;">
-                <p>Solicitud Referencia: <strong>${id}</strong></p>
-                <p>© ${new Date().getFullYear()} FUNDAEC - División Financiera</p>
-                <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
-            </div>
-        </div>
-    `;
-
-    try {
-        const { data: resData, error: resError } = await resend.emails.send({
-            from: 'FUNDAEC Financiero <onboarding@resend.dev>',
-            to: [solicitante_email],
-            subject: `Desembolso Realizado: Solicitud ${id}`,
-            html: html,
-        });
-
-        if (resError) throw resError;
-        return { success: true, id: resData?.id };
-    } catch (error: any) {
-        console.error("Disbursement Email Error:", error);
-        return { success: false, error: error.message };
-    }
+    const html = plantilla({
+        titulo: '¡Desembolso Realizado!',
+        color: '#2563eb',
+        cuerpo: `
+            Hola <strong>${esc(data.solicitante_nombre)}</strong>,<br><br>
+            Contabilidad y Finanzas registró el desembolso del anticipo <strong>${esc(data.id)}</strong>.<br>
+            <strong>Número de operación:</strong> ${esc(data.comprobante_id)}<br><br>
+            <strong>Importante:</strong> tienes <strong>5 días hábiles a partir de hoy</strong> para legalizar los gastos
+            (relación de gastos en Excel, cuenta de cobro, facturas y, si te sobró dinero, el comprobante de reintegro).
+        `,
+        boton: { texto: 'Ir a Legalizaciones', url: `${data.app_url}/legalizaciones` },
+    });
+    return enviar([data.solicitante_email, data.aprobador_email], `Desembolso realizado: ${data.id}`, html);
 }
 
-export async function sendLegalizationFinanceNotification(data: {
+export async function sendLegalizacionParaAprobador(data: {
     id: string;
     solicitante_nombre: string;
+    aprobador_email: string | null;
     monto_total: number;
+    total_legalizado?: number | null;
+    es_reenvio?: boolean;
+    sin_anticipo?: boolean;
+    app_url: string;
 }) {
-    if (!process.env.RESEND_API_KEY) {
-        console.error("RESEND_API_KEY is missing");
-        return { success: false, error: "Configuration error" };
-    }
-
-    const { id, solicitante_nombre, monto_total } = data;
-
-    const html = `
-        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b;">
-            <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #2dd4bf; margin-bottom: 8px;">Legalización Lista</h1>
-                <p style="color: #64748b;">Una nueva legalización requiere revisión</p>
-            </div>
-
-            <div style="background-color: #f0fdfa; padding: 24px; border-radius: 8px; border-left: 4px solid #2dd4bf; margin-bottom: 24px;">
-                <p style="font-size: 16px; line-height: 1.6; color: #334155; margin-bottom: 12px;">
-                    El usuario <strong>${solicitante_nombre}</strong> ha finalizado la carga de soportes para su anticipo.
-                </p>
-                <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #ccfbf1; margin-bottom: 16px;">
-                    <p style="margin: 0; font-size: 14px;"><strong>ID Anticipo:</strong> ${id}</p>
-                    <p style="margin: 0; font-size: 14px;"><strong>Monto Total:</strong> $${monto_total.toLocaleString('es-CO')}</p>
-                </div>
-                <p style="font-size: 14px; color: #0d9488; margin: 0;">
-                    Por favor, ingresa al módulo de administración para validar los soportes cargados.
-                </p>
-            </div>
-
-            <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 40px;">
-                <p>© ${new Date().getFullYear()} FUNDAEC - Control Interno</p>
-                <p>Este es un correo automático para el equipo financiero.</p>
-            </div>
-        </div>
-    `;
-
-    try {
-        const { data: resData, error: resError } = await resend.emails.send({
-            from: 'FUNDAEC Sistemas <onboarding@resend.dev>',
-            to: ['contabilidad@fundaec.org'], // Correo genérico para finanzas
-            subject: `Legalización Pendiente: ${solicitante_nombre} (${id})`,
-            html: html,
-        });
-
-        if (resError) throw resError;
-        return { success: true, id: resData?.id };
-    } catch (error: any) {
-        console.error("Legalization Finance Email Error:", error);
-        return { success: false, error: error.message };
-    }
+    const tipo = data.sin_anticipo ? 'un gasto sin anticipo' : `el anticipo ${esc(data.id)}`;
+    const html = plantilla({
+        titulo: data.es_reenvio ? 'Legalización corregida para revisar' : 'Legalización pendiente de tu revisión',
+        color: '#0d9488',
+        cuerpo: `
+            <strong>${esc(data.solicitante_nombre)}</strong> ${data.es_reenvio ? 'corrigió y reenvió' : 'cargó'} la legalización de ${tipo}.<br><br>
+            <strong>Monto ${data.sin_anticipo ? 'del gasto' : 'del anticipo'}:</strong> ${cop(data.monto_total)}<br>
+            ${data.total_legalizado != null ? `<strong>Total legalizado:</strong> ${cop(data.total_legalizado)}<br>` : ''}
+            <br>Ingresa a la aplicación para verificar que todos los documentos estén completos y marcarla como
+            <strong>revisada y aprobada</strong>, o rechazarla indicando el motivo.
+        `,
+        boton: { texto: 'Revisar legalización', url: `${data.app_url}/aprobaciones` },
+    });
+    return enviar([data.aprobador_email], `Legalización por revisar: ${data.solicitante_nombre} (${data.id})`, html);
 }
 
-export async function sendDirectLegalizationNotification(data: {
+export async function sendLegalizacionParaFinanzas(data: {
+    id: string;
+    solicitante_nombre: string;
+    aprobador_email: string;
+    finanzas_emails: string[];
+    monto_total: number;
+    total_legalizado?: number | null;
+    app_url: string;
+}) {
+    const html = plantilla({
+        titulo: 'Legalización lista para cierre',
+        color: '#d97706',
+        cuerpo: `
+            El aprobador <strong>${esc(data.aprobador_email)}</strong> revisó y aprobó la legalización de
+            <strong>${esc(data.solicitante_nombre)}</strong> (${esc(data.id)}).<br><br>
+            <strong>Monto:</strong> ${cop(data.monto_total)}<br>
+            ${data.total_legalizado != null ? `<strong>Total legalizado:</strong> ${cop(data.total_legalizado)}<br>` : ''}
+            <br>Verifica los soportes y, si aplica, el comprobante de reintegro, para cerrar la legalización.
+        `,
+        boton: { texto: 'Cerrar legalización', url: `${data.app_url}/desembolsos` },
+    });
+    const destinatarios = data.finanzas_emails.length > 0 ? data.finanzas_emails : [CONTABILIDAD_FALLBACK];
+    return enviar(destinatarios, `Legalización por cerrar: ${data.solicitante_nombre} (${data.id})`, html);
+}
+
+export async function sendLegalizacionDevuelta(data: {
     id: string;
     solicitante_nombre: string;
     solicitante_email: string;
+    aprobador_email?: string | null;
+    devuelta_por: 'Aprobador' | 'Contabilidad y Finanzas';
     motivo: string;
-    monto_total: number;
+    app_url: string;
 }) {
-    if (!process.env.RESEND_API_KEY) {
-        console.error("RESEND_API_KEY is missing");
-        return { success: false, error: "Configuration error" };
-    }
+    const html = plantilla({
+        titulo: 'Legalización devuelta para corrección',
+        color: '#dc2626',
+        cuerpo: `
+            Hola <strong>${esc(data.solicitante_nombre)}</strong>,<br><br>
+            ${data.devuelta_por === 'Aprobador' ? 'Tu aprobador' : 'Contabilidad y Finanzas'} devolvió la legalización
+            <strong>${esc(data.id)}</strong> por el siguiente motivo:<br><br>
+            <em>"${esc(data.motivo)}"</em><br><br>
+            Ingresa a Legalizaciones, corrige o reemplaza los documentos y vuelve a enviarla.
+        `,
+        boton: { texto: 'Corregir legalización', url: `${data.app_url}/legalizaciones` },
+    });
+    // Si la devuelve Finanzas también se informa al aprobador
+    const destinatarios = data.devuelta_por === 'Contabilidad y Finanzas'
+        ? [data.solicitante_email, data.aprobador_email]
+        : [data.solicitante_email];
+    return enviar(destinatarios, `Legalización devuelta: ${data.id}`, html);
+}
 
-    const { id, solicitante_nombre, solicitante_email, motivo, monto_total } = data;
-
-    const html = `
-        <div style="font-family: 'Inter', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; color: #1e293b;">
-            <div style="text-align: center; margin-bottom: 30px;">
-                <h1 style="color: #f59e0b; margin-bottom: 8px;">Legalización Directa - Reembolso Requerido</h1>
-                <p style="color: #64748b;">Se ha registrado una legalización de gastos sin anticipo previo</p>
-            </div>
-
-            <div style="background-color: #fffbeb; padding: 24px; border-radius: 8px; border-left: 4px solid #f59e0b; margin-bottom: 24px;">
-                <p style="font-size: 14px; color: #92400e; margin: 0 0 12px 0; font-weight: 600;">
-                    ⚠️ Este gasto NO tiene anticipo previo. Se requiere reembolso completo.
-                </p>
-                <p style="font-size: 16px; line-height: 1.6; color: #334155; margin-bottom: 12px;">
-                    El usuario <strong>${solicitante_nombre}</strong> ha registrado una legalización directa de gastos y requiere aprobación para reembolso.
-                </p>
-                <div style="background: white; padding: 12px; border-radius: 6px; border: 1px solid #fde68a; margin-bottom: 16px;">
-                    <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>ID Legalización:</strong> ${id}</p>
-                    <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Concepto:</strong> ${motivo}</p>
-                    <p style="margin: 0 0 4px 0; font-size: 14px;"><strong>Monto Total:</strong> $${monto_total.toLocaleString('es-CO')}</p>
-                    <p style="margin: 0; font-size: 14px;"><strong>Solicitante:</strong> ${solicitante_email}</p>
-                </div>
-                <p style="font-size: 14px; color: #b45309; margin: 0;">
-                    Por favor, ingresa al módulo de administración para revisar los soportes y aprobar el reembolso.
-                </p>
-            </div>
-
-            <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 40px;">
-                <p>© ${new Date().getFullYear()} FUNDAEC - Control Interno</p>
-                <p>Este es un correo automático para el equipo financiero.</p>
-            </div>
-        </div>
-    `;
-
-    try {
-        const { data: resData, error: resError } = await resend.emails.send({
-            from: 'FUNDAEC Sistemas <onboarding@resend.dev>',
-            to: ['contabilidad@fundaec.org'],
-            subject: `Legalización Directa (Sin Anticipo): ${solicitante_nombre} - $${monto_total.toLocaleString('es-CO')}`,
-            html: html,
-        });
-
-        if (resError) throw resError;
-        return { success: true, id: resData?.id };
-    } catch (error: any) {
-        console.error("Direct Legalization Email Error:", error);
-        return { success: false, error: error.message };
-    }
+export async function sendLegalizacionCerrada(data: {
+    id: string;
+    solicitante_nombre: string;
+    solicitante_email: string;
+    aprobador_email?: string | null;
+}) {
+    const html = plantilla({
+        titulo: 'Legalización finalizada y cerrada',
+        color: '#16a34a',
+        cuerpo: `
+            Hola <strong>${esc(data.solicitante_nombre)}</strong>,<br><br>
+            Contabilidad y Finanzas revisó y cerró la legalización <strong>${esc(data.id)}</strong>.
+            El proceso quedó completo. ¡Gracias!
+        `,
+    });
+    return enviar([data.solicitante_email, data.aprobador_email], `Legalización cerrada: ${data.id}`, html);
 }
